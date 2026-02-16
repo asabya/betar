@@ -3,6 +3,7 @@ package eth
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"time"
@@ -64,6 +65,11 @@ func (w *Wallet) Address() common.Address {
 // AddressHex returns the wallet address as hex string
 func (w *Wallet) AddressHex() string {
 	return w.address.Hex()
+}
+
+// PrivateKeyHex returns the private key as hex string (without 0x prefix)
+func (w *Wallet) PrivateKeyHex() string {
+	return hex.EncodeToString(crypto.FromECDSA(w.privateKey))
 }
 
 // ChainID returns the chain ID
