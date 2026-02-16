@@ -33,18 +33,26 @@ type PaymentService struct {
 	facilitator string
 }
 
-// FacilitatorVerifyRequest is sent to facilitator to verify payment
+// FacilitatorVerifyRequest is sent to facilitator to verify payment (x402 v2 format)
 type FacilitatorVerifyRequest struct {
-	Requirement PaymentRequirement `json:"requirement"`
-	Payer       string             `json:"payer"`
-	Signature   string             `json:"signature"`
+	X402Version         int                   `json:"x402Version"`
+	PaymentPayload      PaymentPayloadV2      `json:"paymentPayload"`
+	PaymentRequirements v2.PaymentRequirement `json:"paymentRequirements"`
 }
 
-// FacilitatorVerifyResponse is returned by facilitator
+// PaymentPayloadV2 is the v2 payment payload structure
+type PaymentPayloadV2 struct {
+	X402Version int                   `json:"x402Version"`
+	Accepted    v2.PaymentRequirement `json:"accepted"`
+	Payload     v2.EVMPayload         `json:"payload"`
+}
+
+// FacilitatorVerifyResponse is returned by facilitator (x402 v2 format)
 type FacilitatorVerifyResponse struct {
-	Valid         bool   `json:"valid"`
-	TransactionID string `json:"transaction_id,omitempty"`
-	Error         string `json:"error,omitempty"`
+	IsValid        bool   `json:"isValid"`
+	InvalidReason  string `json:"invalidReason,omitempty"`
+	InvalidMessage string `json:"invalidMessage,omitempty"`
+	Payer          string `json:"payer,omitempty"`
 }
 
 // NewPaymentService creates a new payment service
@@ -288,9 +296,13 @@ func (s *PaymentService) validatePaymentHeader(header *PaymentHeader) error {
 // verifyWithFacilitator sends payment to x402 facilitator for verification
 func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *PaymentHeader) (bool, error) {
 	req := FacilitatorVerifyRequest{
-		Requirement: header.Requirement,
-		Payer:       header.Payer,
-		Signature:   header.Signature,
+		X402Version: 2,
+		PaymentPayload: PaymentPayloadV2{
+			X402Version: 2,
+			Accepted:    header.Accepted,
+			Payload:     *header.Payload,
+		},
+		PaymentRequirements: header.Requirement,
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -334,13 +346,13 @@ func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *Paym
 		return false, fmt.Errorf("failed to decode facilitator response: %w", err)
 	}
 
-	if verifyResp.Error != "" {
-		fmt.Printf("[verifyWithFacilitator] Facilitator error: %s\n", verifyResp.Error)
-		return false, fmt.Errorf("facilitator error: %s", verifyResp.Error)
+	if !verifyResp.IsValid {
+		fmt.Printf("[verifyWithFacilitator] Facilitator error: %s\n", verifyResp.InvalidMessage)
+		return false, fmt.Errorf("payment invalid: %s", verifyResp.InvalidMessage)
 	}
 
-	fmt.Printf("[verifyWithFacilitator] Verification Result: Valid=%v\n", verifyResp.Valid)
-	return verifyResp.Valid, nil
+	fmt.Printf("[verifyWithFacilitator] Verification Result: Valid=%v, Payer=%s\n", verifyResp.IsValid, verifyResp.Payer)
+	return verifyResp.IsValid, nil
 }
 
 // settlePayment executes the USDC transfer to the seller
