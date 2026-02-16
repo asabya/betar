@@ -190,6 +190,7 @@ func (s *PaymentService) signPayment(req *PaymentRequirement, paymentID string) 
 
 	header := &PaymentHeader{
 		Requirement: *req,
+		Accepted:    *req,
 		Payer:       s.wallet.AddressHex(),
 		PaymentID:   paymentID,
 		Signature:   evmPayload.Signature,
@@ -406,23 +407,11 @@ func (s *PaymentService) WaitForSettlement(ctx context.Context, txHash string, t
 	return true, nil
 }
 
-// generatePaymentID generates a unique payment ID
+// generatePaymentID creates a unique payment ID
 func generatePaymentID(payer, payee, amount, network string) string {
 	data := fmt.Sprintf("%s:%s:%s:%s:%d", payer, payee, amount, network, time.Now().UnixNano())
-	return fmt.Sprintf("0x%x", sha256Hash(data))
-}
-
-// sha256Hash returns SHA256 hash of input
-func sha256Hash(input string) []byte {
-	hash := 0
-	for i, c := range input {
-		hash = hash*31 + int(c)*i
-	}
-	result := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		result[i] = byte((hash >> (i * 8)) & 0xff)
-	}
-	return result
+	hash := crypto.Keccak256Hash([]byte(data))
+	return fmt.Sprintf("0x%x", hash)
 }
 
 // ParsePayment parses a payment header from JSON

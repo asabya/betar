@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asabya/betar/internal/eth"
-
 	"github.com/mark3labs/x402-go"
 )
 
@@ -71,40 +69,6 @@ func CreatePaymentRequirement(network, amount, asset, payTo string, timeout int6
 			"version": "1",
 		},
 	}
-}
-
-// SignRequirement signs a payment requirement with the wallet
-func SignRequirement(wallet *eth.Wallet, req *PaymentRequirement) (string, error) {
-	// In production, this would create an EIP-712 signature
-	// For now, create a simple signature of the payment ID
-	sigData := fmt.Sprintf("%s:%s:%s:%s", req.Network, req.MaxAmountRequired, req.Asset, req.PayTo)
-
-	// TODO: Implement proper EIP-712 signing using x402-go library
-	// This is a placeholder - actual implementation will use x402-go signers
-	_ = sigData
-	_ = wallet
-
-	return "mock_signature", nil
-}
-
-// VerifyPayment verifies payment header (placeholder - will integrate x402-go)
-func VerifyPayment(header *PaymentHeader) error {
-	if header == nil {
-		return fmt.Errorf("payment header is nil")
-	}
-
-	if header.Requirement.Scheme != "exact" {
-		return fmt.Errorf("unsupported payment scheme: %s", header.Requirement.Scheme)
-	}
-
-	if header.Signature == "" {
-		return fmt.Errorf("payment signature missing")
-	}
-
-	// TODO: Verify signature using x402-go library
-	// This will call the facilitator to verify the payment intent
-
-	return nil
 }
 
 // Default network constants
