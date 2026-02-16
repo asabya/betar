@@ -1,0 +1,19 @@
+id = "list-10"
+
+[global]
+plan = "crdt-listing"
+case = "list-10-agents"
+builder = "exec:go"
+
+[global.run]
+# Run locally using exec:go (runs as regular processes on the host)
+runner = "local:exec"
+instances = 10
+
+[[groups]]
+id = "agents"
+instances = { count = 10 }
+
+[groups.run]
+# Increase timeout for CRDT gossip convergence
+timeout = "5m"

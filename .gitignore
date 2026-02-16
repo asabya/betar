@@ -1,0 +1,10 @@
+bin/
+coverage.out
+*.log
+.env
+.DS_Store
+
+# Foundry artifacts
+contracts/lib/
+contracts/cache/
+contracts/out/

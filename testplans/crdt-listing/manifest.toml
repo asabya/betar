@@ -1,0 +1,22 @@
+name = "crdt-listing"
+
+[defaults]
+builder = "exec:go"
+runner = "local:exec"
+
+[builders."docker:go"]
+enabled = true
+
+[builders."exec:go"]
+enabled = true
+
+[runners."local:docker"]
+enabled = true
+
+[runners."local:exec"]
+enabled = true
+
+# seq 0
+[[testcases]]
+name = "list-10-agents"
+instances = { min = 10, max = 10, default = 10 }
