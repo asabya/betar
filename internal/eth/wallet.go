@@ -2,17 +2,25 @@ package eth
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // Wallet manages Ethereum wallet operations
@@ -67,14 +75,14 @@ func (w *Wallet) AddressHex() string {
 	return w.address.Hex()
 }
 
-// PrivateKeyHex returns the private key as hex string (without 0x prefix)
-func (w *Wallet) PrivateKeyHex() string {
-	return hex.EncodeToString(crypto.FromECDSA(w.privateKey))
-}
-
 // ChainID returns the chain ID
 func (w *Wallet) ChainID() *big.Int {
 	return w.chainID
+}
+
+// PrivateKeyHex returns the private key as hex string
+func (w *Wallet) PrivateKeyHex() string {
+	return hex.EncodeToString(w.privateKey.D.Bytes())
 }
 
 // Client returns the Ethereum client
@@ -200,4 +208,228 @@ func WeiToEther(wei *big.Int) float64 {
 	f.Quo(f, new(big.Float).SetInt64(1e18))
 	e, _ := f.Float64()
 	return e
+}
+
+// EncryptedWallet represents an encrypted wallet file
+type EncryptedWallet struct {
+	Address    string `json:"address"`
+	Ciphertext string `json:"ciphertext"`
+	Salt       string `json:"salt"`
+	IV         string `json:"iv"`
+}
+
+// encrypt encrypts data with password using PBKDF2 and AES-GCM
+func encrypt(data []byte, password string) (ciphertext, salt, iv []byte, err error) {
+	// Generate salt
+	salt = make([]byte, 32)
+	if _, err = rand.Read(salt); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	// Derive key using PBKDF2
+	key := pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
+
+	// Generate IV
+	iv = make([]byte, 12)
+	if _, err = rand.Read(iv); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate IV: %w", err)
+	}
+
+	// Create cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	// Encrypt using GCM
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	ciphertext = gcm.Seal(nil, iv, data, nil)
+	return ciphertext, salt, iv, nil
+}
+
+// decrypt decrypts ciphertext with password using PBKDF2 and AES-GCM
+func decrypt(ciphertext, salt, iv []byte, password string) ([]byte, error) {
+	// Derive key using PBKDF2
+	key := pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
+
+	// Create cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	// Decrypt using GCM
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	return plaintext, nil
+}
+
+// LoadOrCreateWallet loads existing wallet or creates new one
+// walletPath: path to wallet file (e.g., ~/.betar/wallet)
+// password: encryption password
+// rpcURL: Ethereum RPC endpoint
+func LoadOrCreateWallet(walletPath, password, rpcURL string) (*Wallet, error) {
+	// Ensure directory exists
+	dir := filepath.Dir(walletPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create wallet directory: %w", err)
+	}
+
+	// Check if wallet exists
+	if _, err := os.Stat(walletPath); err == nil {
+		// Load existing wallet
+		data, err := os.ReadFile(walletPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read wallet file: %w", err)
+		}
+
+		// Parse encrypted wallet (simple format: hex encoded)
+		if len(data) < 64 {
+			return nil, fmt.Errorf("invalid wallet file format")
+		}
+
+		// Format: salt(64 hex) + iv(24 hex) + ciphertext
+		salt, err := hex.DecodeString(string(data[:64]))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode salt: %w", err)
+		}
+
+		iv, err := hex.DecodeString(string(data[64:88]))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode IV: %w", err)
+		}
+
+		ciphertext, err := hex.DecodeString(string(data[88:]))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
+		}
+
+		// Decrypt private key
+		privateKeyHex, err := decrypt(ciphertext, salt, iv, password)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt wallet (wrong password?): %w", err)
+		}
+
+		return NewWallet(string(privateKeyHex), rpcURL)
+	}
+
+	// Create new wallet
+	privateKey, err := GenerateKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key: %w", err)
+	}
+
+	// Encode private key
+	privateKeyBytes := crypto.FromECDSA(privateKey)
+	privateKeyHex := hex.EncodeToString(privateKeyBytes)
+
+	// Encrypt private key
+	ciphertext, salt, iv, err := encrypt([]byte(privateKeyHex), password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt wallet: %w", err)
+	}
+
+	// Save wallet file
+	data := hex.EncodeToString(salt) + hex.EncodeToString(iv) + hex.EncodeToString(ciphertext)
+	if err := os.WriteFile(walletPath, []byte(data), 0600); err != nil {
+		return nil, fmt.Errorf("failed to save wallet: %w", err)
+	}
+
+	return NewWallet(privateKeyHex, rpcURL)
+}
+
+// Sign signs data with the wallet's private key
+func (w *Wallet) Sign(data []byte) ([]byte, error) {
+	hash := crypto.Keccak256Hash(data)
+	signature, err := crypto.Sign(hash.Bytes(), w.privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign: %w", err)
+	}
+	return signature, nil
+}
+
+// ERC20Balance returns the balance of an ERC20 token for the wallet
+func (w *Wallet) ERC20Balance(ctx context.Context, tokenAddress common.Address) (*big.Int, error) {
+	// Standard ERC20 balanceOf call
+	// We need to create the call data for balanceOf(address)
+	// balanceOf signature: 0x70a08231
+	// balanceOf(address): 0x70a08231 + 000000000000000000000000 + address
+
+	callData := make([]byte, 36)
+	copy(callData[:4], []byte{0x70, 0xa0, 0x82, 0x31}) // balanceOf selector
+	copy(callData[4:], w.address.Bytes())
+
+	result, err := w.client.CallContract(ctx, ethereum.CallMsg{
+		To:   &tokenAddress,
+		Data: callData,
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call balanceOf: %w", err)
+	}
+
+	if len(result) == 0 {
+		return big.NewInt(0), nil
+	}
+
+	balance := new(big.Int).SetBytes(result)
+	return balance, nil
+}
+
+// TransferERC20 transfers ERC20 tokens to an address
+func (w *Wallet) TransferERC20(ctx context.Context, tokenAddress, to common.Address, amount *big.Int) (common.Hash, error) {
+	// Create the transaction data for transfer(to, amount)
+	// transfer(address,uint256) selector: 0xa9059cbb
+
+	callData := make([]byte, 68)
+	copy(callData[:4], []byte{0xa9, 0x05, 0x9c, 0xbb}) // transfer selector
+	copy(callData[4:24], to.Bytes())
+	copy(callData[36:], amount.Bytes())
+
+	// Get nonce
+	nnonce, err := w.client.PendingNonceAt(ctx, w.address)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %w", err)
+	}
+
+	// Get gas price
+	gasPrice, err := w.client.SuggestGasPrice(ctx)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get gas price: %w", err)
+	}
+
+	// Create transaction
+	tx := gethtypes.NewTx(&gethtypes.LegacyTx{
+		Nonce:    nnonce,
+		To:       &tokenAddress,
+		Value:    big.NewInt(0),
+		Gas:      65000, // ERC20 transfer gas limit
+		GasPrice: gasPrice,
+		Data:     callData,
+	})
+
+	// Sign transaction
+	signedTx, err := gethtypes.SignTx(tx, gethtypes.NewEIP155Signer(w.chainID), w.privateKey)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	// Send transaction
+	err = w.client.SendTransaction(ctx, signedTx)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
+	}
+
+	return signedTx.Hash(), nil
 }
