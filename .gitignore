@@ -3,7 +3,7 @@ coverage.out
 *.log
 .env
 .DS_Store
-
+.worktrees/
 # Foundry artifacts
 contracts/lib/
 contracts/cache/
