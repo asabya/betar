@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/asabya/betar/cmd/betar/api"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
+	"github.com/asabya/betar/internal/eth"
 	"github.com/asabya/betar/internal/ipfs"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
@@ -284,7 +286,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
-	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost)
+	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService)
 	if err := apiServer.Start(); err != nil {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
@@ -361,11 +363,32 @@ func initRuntime(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to create listing service: %w", err)
 	}
 
+	// Create payment service if Ethereum is configured
+	var walletAddr string
+	if cfg.Ethereum != nil && cfg.Ethereum.PrivateKey != "" {
+		walletAddr, _ = config.GetAddressFromKey(cfg.Ethereum.PrivateKey)
+		if cfg.Ethereum.RPCURL != "" {
+			wallet, err := eth.NewWallet(cfg.Ethereum.PrivateKey, cfg.Ethereum.RPCURL)
+			if err != nil {
+				fmt.Printf("Warning: failed to create wallet: %v (payments disabled)\n", err)
+				fmt.Printf("Wallet address: %s (RPC URL required for payments)\n", walletAddr)
+			} else {
+				fmt.Printf("Wallet address: %s\n", walletAddr)
+				paymentService = marketplace.NewPaymentService(wallet, walletAddr)
+				if paymentService == nil {
+					fmt.Printf("Warning: failed to create payment service (payments disabled)\n")
+				}
+			}
+		} else {
+			fmt.Printf("Wallet address: %s (RPC URL required for payments)\n", walletAddr)
+		}
+	}
+
 	agentManager, err = agent.NewManager(agent.ADKConfig{
 		AppName:   "betar",
 		ModelName: cfg.Agent.Model,
 		APIKey:    cfg.Agent.APIKey,
-	}, ipfsClient, p2pHost, streamHandler, listingService, cfg.P2P.PrivKey)
+	}, ipfsClient, p2pHost, streamHandler, listingService, cfg.P2P.PrivKey, paymentService, walletAddr)
 	if err != nil {
 		return fmt.Errorf("failed to create agent manager: %w", err)
 	}
@@ -588,11 +611,92 @@ func executeAgent(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("agent-id and task are required")
 	}
 
+	// First attempt - without payment
 	var resp struct {
 		Output string `json:"output"`
 		Error  string `json:"error"`
 	}
-	if err := client.Post(fmt.Sprintf("/agents/%s/execute", agentID), map[string]string{"input": task}, &resp); err != nil {
+
+	payErr, err := client.PostWithPayment(fmt.Sprintf("/agents/%s/execute", agentID), map[string]string{"input": task}, &resp)
+	// Check payment required first (even if err is nil, since 402 returns err=nil but payErr non-nil)
+	if payErr != nil && payErr.RequiresPayment {
+		fmt.Printf("\n=== Payment Required ===\n")
+		fmt.Printf("Agent: %s\n", payErr.AgentID)
+		fmt.Printf("Message: %s\n", payErr.Message)
+
+		if payReq, ok := payErr.PaymentRequirement.(map[string]interface{}); ok {
+			fmt.Printf("Amount: %s USDC\n", payReq["maxAmountRequired"])
+			if asset, ok := payReq["extra"].(map[string]interface{}); ok {
+				fmt.Printf("Asset: %s\n", asset["name"])
+			}
+		}
+
+		fmt.Printf("\nDo you want to proceed with payment? (y/N): ")
+
+		var confirm string
+		fmt.Scanln(&confirm)
+		if confirm != "y" && confirm != "Y" {
+			fmt.Println("Payment cancelled by user")
+			return nil
+		}
+
+		// Sign payment and retry
+		fmt.Println("\nSigning payment...")
+
+		// Convert to marketplace.PaymentRequirement
+		var paymentReq marketplace.PaymentRequirement
+		if reqBytes, err := json.Marshal(payErr.PaymentRequirement); err == nil {
+			json.Unmarshal(reqBytes, &paymentReq)
+		}
+
+		// Call local API to sign payment (using the same client since we need local wallet)
+		var paymentHeader marketplace.PaymentHeader
+		if signErr := client.Post("/payment/sign", map[string]interface{}{
+			"paymentRequirement": paymentReq,
+		}, &paymentHeader); signErr != nil {
+			return fmt.Errorf("failed to sign payment: %w", signErr)
+		}
+
+		fmt.Printf("Payment signed. PaymentID: %s\n", paymentHeader.PaymentID)
+
+		// Submit the EIP-3009 transaction
+		fmt.Println("\nSubmitting payment transaction...")
+
+		var submitResp struct {
+			TransactionHash string `json:"transactionHash"`
+			Status          string `json:"status"`
+		}
+		if submitErr := client.Post("/payment/submit", map[string]interface{}{
+			"paymentHeader": paymentHeader,
+		}, &submitResp); submitErr != nil {
+			return fmt.Errorf("failed to submit payment: %w", submitErr)
+		}
+
+		fmt.Printf("Transaction submitted. TxHash: %s, Status: %s\n", submitResp.TransactionHash, submitResp.Status)
+
+		// Retry with payment and transaction hash
+		var respWithPayment struct {
+			Output    string `json:"output"`
+			Error     string `json:"error"`
+			PaymentID string `json:"paymentId"`
+		}
+		if err := client.Post(fmt.Sprintf("/agents/%s/execute", agentID), map[string]interface{}{
+			"input":           task,
+			"paymentHeader":   paymentHeader,
+			"transactionHash": submitResp.TransactionHash,
+		}, &respWithPayment); err != nil {
+			return err
+		}
+
+		if respWithPayment.Error != "" {
+			return fmt.Errorf("execution error: %s", respWithPayment.Error)
+		}
+
+		fmt.Printf("Payment ID: %s\n", respWithPayment.PaymentID)
+		fmt.Println("Task output:")
+		fmt.Println(respWithPayment.Output)
+		return nil
+	} else if err != nil {
 		return err
 	}
 

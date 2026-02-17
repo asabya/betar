@@ -1,11 +1,15 @@
 package config
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	p2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 )
 
@@ -52,8 +56,9 @@ type AgentConfig struct {
 
 // StorageConfig holds local persistent storage configuration
 type StorageConfig struct {
-	DataDir    string
-	P2PKeyPath string
+	DataDir       string
+	P2PKeyPath    string
+	WalletKeyPath string
 }
 
 // LoadConfig loads configuration from environment
@@ -72,9 +77,9 @@ func LoadConfig() (*Config, error) {
 			APIURL: getEnv("IPFS_API_URL", "http://localhost:5001"),
 		},
 		Ethereum: &EthereumConfig{
-			RPCURL:     getEnv("ETHEREUM_RPC_URL", "https://rpc.sepolia.org"),
+			RPCURL:     getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
 			PrivateKey: getEnv("ETHEREUM_PRIVATE_KEY", ""),
-			ChainID:    11155111, // Sepolia
+			ChainID:    84532, // Base Sepolia
 		},
 		Agent: &AgentConfig{
 			Model:  getEnv("GOOGLE_MODEL", "gemini-2.5-flash"),
@@ -85,9 +90,20 @@ func LoadConfig() (*Config, error) {
 
 	dataDir := getEnv("BETAR_DATA_DIR", defaultDataDir())
 	keyPath := getEnv("BETAR_P2P_KEY_PATH", filepath.Join(dataDir, "p2p_identity.key"))
+	walletKeyPath := getEnv("BETAR_WALLET_KEY_PATH", filepath.Join(dataDir, "wallet.key"))
 
 	cfg.Storage.DataDir = dataDir
 	cfg.Storage.P2PKeyPath = keyPath
+	cfg.Storage.WalletKeyPath = walletKeyPath
+
+	// If no private key from env, load or generate wallet key
+	if cfg.Ethereum.PrivateKey == "" {
+		walletKey, err := loadOrCreateWalletKey(cfg.Storage.WalletKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load or create wallet key: %w", err)
+		}
+		cfg.Ethereum.PrivateKey = walletKey
+	}
 
 	// Parse bootstrap peers
 	bootstrapPeersStr := getEnv("BOOTSTRAP_PEERS", "")
@@ -148,6 +164,61 @@ func loadOrCreateP2PIdentity(path string) (p2pcrypto.PrivKey, error) {
 	}
 
 	return pk, nil
+}
+
+func loadOrCreateWalletKey(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("empty wallet key path")
+	}
+
+	keyBytes, err := os.ReadFile(path)
+	if err == nil {
+		keyHex := strings.TrimSpace(string(keyBytes))
+
+		if _, err := crypto.HexToECDSA(keyHex); err != nil {
+			return "", fmt.Errorf("invalid wallet key at %s: %w", path, err)
+		}
+
+		return keyHex, nil
+	}
+
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to read wallet key at %s: %w", path, err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("failed to create data dir: %w", err)
+	}
+
+	privateKey, err := crypto.GenerateKey() // secp256k1
+	if err != nil {
+		return "", fmt.Errorf("failed to generate wallet key: %w", err)
+	}
+
+	keyHex := hex.EncodeToString(crypto.FromECDSA(privateKey))
+
+	if err := os.WriteFile(path, []byte(keyHex+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("failed to persist wallet key: %w", err)
+	}
+
+	return keyHex, nil
+}
+
+func GetAddressFromKey(keyHex string) (string, error) {
+	keyHex = strings.TrimSpace(keyHex)
+
+	privateKey, err := crypto.HexToECDSA(keyHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid private key: %w", err)
+	}
+
+	publicKey, ok := privateKey.Public().(*ecdsa.PublicKey)
+	if !ok {
+		return "", fmt.Errorf("invalid public key type")
+	}
+
+	address := crypto.PubkeyToAddress(*publicKey)
+	return address.Hex(), nil
 }
 
 func getEnv(key, defaultValue string) string {

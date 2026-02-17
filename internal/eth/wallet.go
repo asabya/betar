@@ -433,3 +433,53 @@ func (w *Wallet) TransferERC20(ctx context.Context, tokenAddress, to common.Addr
 
 	return signedTx.Hash(), nil
 }
+
+// SubmitTransaction submits a generic transaction to a contract
+func (w *Wallet) SubmitTransaction(ctx context.Context, to common.Address, value *big.Int, data []byte) (common.Hash, error) {
+	// Get nonce
+	nonce, err := w.client.PendingNonceAt(ctx, w.address)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %w", err)
+	}
+
+	// Get gas price
+	gasPrice, err := w.client.SuggestGasPrice(ctx)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get gas price: %w", err)
+	}
+
+	// Estimate gas
+	gasLimit, err := w.client.EstimateGas(ctx, ethereum.CallMsg{
+		From:  w.address,
+		To:    &to,
+		Value: value,
+		Data:  data,
+	})
+	if err != nil {
+		gasLimit = 100000 // fallback
+	}
+
+	// Create transaction
+	tx := gethtypes.NewTx(&gethtypes.LegacyTx{
+		Nonce:    nonce,
+		To:       &to,
+		Value:    value,
+		Gas:      gasLimit,
+		GasPrice: gasPrice,
+		Data:     data,
+	})
+
+	// Sign transaction
+	signedTx, err := gethtypes.SignTx(tx, gethtypes.NewEIP155Signer(w.chainID), w.privateKey)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	// Send transaction
+	err = w.client.SendTransaction(ctx, signedTx)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
+	}
+
+	return signedTx.Hash(), nil
+}

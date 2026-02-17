@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
-	"io"
-
-	v2 "github.com/mark3labs/x402-go"
+	"github.com/mark3labs/x402-go"
 	"github.com/mark3labs/x402-go/signers/evm"
 
 	"github.com/asabya/betar/internal/eth"
@@ -21,30 +21,43 @@ import (
 )
 
 const (
-	FacilitatorURL = "https://facilitator.x402.rs"
+	FacilitatorURL = "https://facilitator.x402endpoints.online"
 	DefaultTimeout = 60
 )
 
 // PaymentService handles EIP-402 (x402) payments
 type PaymentService struct {
-	wallet      *eth.Wallet
-	paymentAddr string
-	network     string
-	facilitator string
+	wallet          *eth.Wallet
+	paymentAddr     string
+	network         string
+	facilitator     string
+	skipFacilitator bool
+}
+
+// PaymentServiceOption is a functional option for PaymentService
+type PaymentServiceOption func(*PaymentService)
+
+// WithSkipFacilitator sets whether to skip facilitator verification
+func WithSkipFacilitator(skip bool) PaymentServiceOption {
+	return func(s *PaymentService) {
+		s.skipFacilitator = skip
+	}
 }
 
 // FacilitatorVerifyRequest is sent to facilitator to verify payment (x402 v2 format)
 type FacilitatorVerifyRequest struct {
-	X402Version         int                   `json:"x402Version"`
-	PaymentPayload      PaymentPayloadV2      `json:"paymentPayload"`
-	PaymentRequirements v2.PaymentRequirement `json:"paymentRequirements"`
+	X402Version         int                     `json:"x402Version"`
+	PaymentPayload      PaymentPayload          `json:"paymentPayload"`
+	PaymentRequirements x402.PaymentRequirement `json:"paymentRequirements"`
 }
 
-// PaymentPayloadV2 is the v2 payment payload structure
-type PaymentPayloadV2 struct {
-	X402Version int                   `json:"x402Version"`
-	Accepted    v2.PaymentRequirement `json:"accepted"`
-	Payload     v2.EVMPayload         `json:"payload"`
+// PaymentPayload is the payment payload structure (v2 format)
+type PaymentPayload struct {
+	X402Version int                     `json:"x402Version"`
+	Scheme      string                  `json:"scheme"`
+	Network     string                  `json:"network"`
+	Accepted    x402.PaymentRequirement `json:"accepted"`
+	Payload     x402.EVMPayload         `json:"payload"`
 }
 
 // FacilitatorVerifyResponse is returned by facilitator (x402 v2 format)
@@ -56,13 +69,18 @@ type FacilitatorVerifyResponse struct {
 }
 
 // NewPaymentService creates a new payment service
-func NewPaymentService(wallet *eth.Wallet, paymentAddr string) *PaymentService {
-	return &PaymentService{
-		wallet:      wallet,
-		paymentAddr: paymentAddr,
-		network:     NetworkBaseSepolia, // Default to Base Sepolia
-		facilitator: FacilitatorURL,
+func NewPaymentService(wallet *eth.Wallet, paymentAddr string, opts ...PaymentServiceOption) *PaymentService {
+	s := &PaymentService{
+		wallet:          wallet,
+		paymentAddr:     paymentAddr,
+		network:         NetworkBaseSepolia,
+		facilitator:     FacilitatorURL,
+		skipFacilitator: true,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // GetPaymentAddress returns the payment address for receiving payments
@@ -109,21 +127,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, payee string, amount
 		s.network,
 	)
 
-	// Create payment header
-	header := &PaymentHeader{
-		Requirement: requirement,
-		Payer:       s.wallet.AddressHex(),
-		PaymentID:   paymentID,
-	}
-
-	// Sign the requirement
-	signature, err := s.signRequirement(&requirement, orderID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign requirement: %w", err)
-	}
-	header.Signature = signature
-
-	return header, nil
+	return s.signPayment(&requirement, paymentID)
 }
 
 // SignRequirement signs a payment requirement and creates a PaymentHeader (used by buyer)
@@ -136,33 +140,17 @@ func (s *PaymentService) SignRequirement(req *PaymentRequirement, orderID string
 		req.Network,
 	)
 
-	// Create payment header
-	header := &PaymentHeader{
-		Requirement: *req,
-		Payer:       s.wallet.AddressHex(),
-		PaymentID:   paymentID,
-	}
-
-	// Sign the requirement
-	signature, err := s.signRequirement(req, orderID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign requirement: %w", err)
-	}
-	header.Signature = signature
-
-	return header, nil
+	return s.signPayment(req, paymentID)
 }
 
 // createX402Signer creates an x402-go EVM signer for EIP-3009 signatures
 func (s *PaymentService) createX402Signer() (*evm.Signer, error) {
 	privateKeyHex := s.wallet.PrivateKeyHex()
 
-	usdcAddress := GetUSDCAddress(s.network)
-
 	signer, err := evm.NewSigner(
-		evm.WithPrivateKey(privateKeyHex),
-		evm.WithNetwork(s.network),
-		evm.WithToken(usdcAddress, "USDC", 6),
+		evm.WithPrivateKey("0x"+privateKeyHex),
+		evm.WithNetwork(x402.BaseSepolia.NetworkID),
+		evm.WithToken(x402.BaseSepolia.USDCAddress, x402.BaseSepolia.EIP3009Name, int(x402.BaseSepolia.Decimals)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create x402 signer: %w", err)
@@ -173,30 +161,36 @@ func (s *PaymentService) createX402Signer() (*evm.Signer, error) {
 
 // signPayment creates an EIP-3009 authorization for the payment requirement
 func (s *PaymentService) signPayment(req *PaymentRequirement, paymentID string) (*PaymentHeader, error) {
+	fmt.Printf("[signPayment] Starting payment signing - PayTo: %s, Amount: %s, Network: %s\n", req.PayTo, req.MaxAmountRequired, req.Network)
+
 	signer, err := s.createX402Signer()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signer: %w", err)
 	}
+	fmt.Printf("[signPayment] X402 signer created successfully\n")
 
 	paymentPayload, err := signer.Sign(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign payment: %w", err)
 	}
+	fmt.Printf("[signPayment] Payment signed successfully %+v\n", paymentPayload)
 
-	evmPayload, ok := paymentPayload.Payload.(v2.EVMPayload)
+	evmPayload, ok := paymentPayload.Payload.(x402.EVMPayload)
 	if !ok {
 		return nil, fmt.Errorf("unexpected payload type: %T", paymentPayload.Payload)
 	}
 
 	header := &PaymentHeader{
 		Requirement: *req,
-		Accepted:    *req,
+		Accepted:    req,
 		Payer:       s.wallet.AddressHex(),
 		PaymentID:   paymentID,
 		Signature:   evmPayload.Signature,
 		Payload:     &evmPayload,
 	}
 
+	fmt.Printf("[signPayment] Payment header created - Payer: %s, PaymentID: %s\n", header.Payer, header.PaymentID)
+	fmt.Printf("[signPayment] Payment header: %+v\n", header)
 	return header, nil
 }
 
@@ -228,36 +222,58 @@ func (s *PaymentService) signRequirement(req *PaymentRequirement, orderID string
 	return hex.EncodeToString(signature), nil
 }
 
-// VerifyAndSettle verifies payment with facilitator and settles on-chain
-func (s *PaymentService) VerifyAndSettle(ctx context.Context, header *PaymentHeader) (string, error) {
+// VerifyAndSettle verifies payment header and checks if transaction is confirmed on-chain
+// For the new flow where buyer submits the transaction directly
+func (s *PaymentService) VerifyAndSettle(ctx context.Context, header *PaymentHeader, buyerTxHash string) (string, error) {
 	if header == nil {
 		return "", fmt.Errorf("payment header is nil")
 	}
 
+	fmt.Printf("[VerifyAndSettle] >>> Starting payment verification for PaymentID: %s <<<\n", header.PaymentID)
+	fmt.Printf("[VerifyAndSettle] Payer: %s, PayTo: %s, Amount: %s USDC\n", header.Payer, header.Requirement.PayTo, header.Requirement.MaxAmountRequired)
+
 	// Step 1: Validate payment header locally
+	fmt.Printf("[VerifyAndSettle] Step 1: Validating payment header locally...\n")
 	if err := s.validatePaymentHeader(header); err != nil {
 		return "", fmt.Errorf("invalid payment header: %w", err)
 	}
+	fmt.Printf("[VerifyAndSettle] Step 1: Local validation passed\n")
 
-	// Step 2: Verify with facilitator
-	verified, err := s.verifyWithFacilitator(ctx, header)
+	// Step 2: Verify with facilitator (skip if flag is set)
+	if s.skipFacilitator {
+		fmt.Printf("[VerifyAndSettle] Step 2: Skipping facilitator verification (skipFacilitator=true)\n")
+	} else {
+		fmt.Printf("[VerifyAndSettle] Step 2: Verifying with facilitator...\n")
+		verified, err := s.verifyWithFacilitator(ctx, header)
+		if err != nil {
+			return "", fmt.Errorf("facilitator verification failed: %w", err)
+		}
+		if !verified {
+			return "", fmt.Errorf("payment verification failed")
+		}
+		fmt.Printf("[VerifyAndSettle] Step 2: Facilitator verification passed\n")
+	}
+
+	// Step 3: Verify buyer's on-chain transaction (buyer submitted it directly)
+	if buyerTxHash == "" {
+		return "", fmt.Errorf("no transaction hash provided - buyer must submit payment transaction")
+	}
+
+	fmt.Printf("[VerifyAndSettle] Step 3: Verifying buyer's on-chain transaction...\n")
+	txHash := common.HexToHash(buyerTxHash)
+	receipt, err := s.wallet.WaitForTransaction(ctx, txHash)
 	if err != nil {
-		return "", fmt.Errorf("facilitator verification failed: %w", err)
-	}
-	if !verified {
-		return "", fmt.Errorf("payment verification failed")
+		fmt.Printf("[VerifyAndSettle] Transaction verification failed: %v\n", err)
+		return "", fmt.Errorf("transaction not confirmed: %w", err)
 	}
 
-	// Step 3: Settle on-chain (transfer USDC to seller)
-	fmt.Printf("[VerifyAndSettle] Settlement started for PaymentID: %s\n", header.PaymentID)
-	txHash, err := s.settlePayment(ctx, header)
-	if err != nil {
-		fmt.Printf("[VerifyAndSettle] Settlement failed: %v\n", err)
-		return "", fmt.Errorf("payment settlement failed: %w", err)
+	if receipt.Status != 1 {
+		return "", fmt.Errorf("transaction failed on-chain")
 	}
-	fmt.Printf("[VerifyAndSettle] Settlement successful. TxHash: %s\n", txHash)
 
-	return txHash, nil
+	fmt.Printf("[VerifyAndSettle] >>> Transaction confirmed. TxHash: %s, Block: %d <<<\n", buyerTxHash, receipt.BlockNumber)
+
+	return buyerTxHash, nil
 }
 
 // validatePaymentHeader validates the payment header locally
@@ -296,15 +312,25 @@ func (s *PaymentService) validatePaymentHeader(header *PaymentHeader) error {
 
 // verifyWithFacilitator sends payment to x402 facilitator for verification
 func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *PaymentHeader) (bool, error) {
+	var acceptedReq x402.PaymentRequirement
+	if header.Accepted != nil {
+		acceptedReq = *header.Accepted
+	}
+
 	req := FacilitatorVerifyRequest{
 		X402Version: 2,
-		PaymentPayload: PaymentPayloadV2{
+		PaymentPayload: PaymentPayload{
 			X402Version: 2,
-			Accepted:    header.Accepted,
+			Scheme:      header.Requirement.Scheme,
+			Network:     header.Requirement.Network,
+			Accepted:    acceptedReq,
 			Payload:     *header.Payload,
 		},
 		PaymentRequirements: header.Requirement,
 	}
+
+	// Set dummy resource URL (v2 requires a valid URL)
+	req.PaymentRequirements.Resource = "https://betar.agent/execute"
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
@@ -356,22 +382,116 @@ func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *Paym
 	return verifyResp.IsValid, nil
 }
 
-// settlePayment executes the USDC transfer to the seller
-func (s *PaymentService) settlePayment(ctx context.Context, header *PaymentHeader) (string, error) {
-	amount, ok := new(big.Int).SetString(header.Requirement.MaxAmountRequired, 10)
+// SubmitPayment submits the EIP-3009 transferWithAuthorization transaction
+// This is called by the BUYER after signing to submit the on-chain transaction
+func (s *PaymentService) SubmitPayment(ctx context.Context, header *PaymentHeader) (string, error) {
+	if header == nil {
+		return "", fmt.Errorf("payment header is nil")
+	}
+
+	if header.Payload == nil {
+		return "", fmt.Errorf("payment payload is nil")
+	}
+
+	auth := header.Payload.Authorization
+	from := common.HexToAddress(auth.From)
+	to := common.HexToAddress(auth.To)
+
+	// Value is a uint256 in decimal string
+	value, ok := new(big.Int).SetString(auth.Value, 10)
 	if !ok {
-		return "", fmt.Errorf("invalid amount: %s", header.Requirement.MaxAmountRequired)
+		return "", fmt.Errorf("invalid amount: %s", auth.Value)
+	}
+
+	// ValidAfter and ValidBefore are uint256 timestamps in decimal string
+	validAfter, ok := new(big.Int).SetString(auth.ValidAfter, 10)
+	if !ok {
+		return "", fmt.Errorf("invalid validAfter: %s", auth.ValidAfter)
+	}
+
+	validBefore, ok := new(big.Int).SetString(auth.ValidBefore, 10)
+	if !ok {
+		return "", fmt.Errorf("invalid validBefore: %s", auth.ValidBefore)
+	}
+
+	// Nonce is a bytes32 - convert hex string (may have 0x prefix) to 32 bytes
+	nonceStr := auth.Nonce
+	if strings.HasPrefix(nonceStr, "0x") {
+		nonceStr = nonceStr[2:]
+	}
+	nonceBytes, err := hex.DecodeString(nonceStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid nonce hex: %w", err)
+	}
+	if len(nonceBytes) != 32 {
+		return "", fmt.Errorf("nonce must be 32 bytes, got %d", len(nonceBytes))
+	}
+
+	// Signature is hex - may have 0x prefix
+	sigStr := header.Payload.Signature
+	if strings.HasPrefix(sigStr, "0x") {
+		sigStr = sigStr[2:]
+	}
+	signature, err := hex.DecodeString(sigStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid signature: %w", err)
 	}
 
 	usdcAddress := common.HexToAddress(header.Requirement.Asset)
-	toAddress := common.HexToAddress(header.Requirement.PayTo)
 
-	txHash, err := s.wallet.TransferERC20(ctx, usdcAddress, toAddress, amount)
+	fmt.Printf("[SubmitPayment] Submitting EIP-3009 transferWithAuthorization\n")
+	fmt.Printf("[SubmitPayment] From: %s, To: %s, Amount: %s\n", from.Hex(), to.Hex(), value.String())
+	fmt.Printf("[SubmitPayment] USDC Contract: %s\n", usdcAddress.Hex())
+	fmt.Printf("[SubmitPayment] ValidAfter: %s, ValidBefore: %s\n", validAfter.String(), validBefore.String())
+	fmt.Printf("[SubmitPayment] Nonce (hex): %x\n", nonceBytes)
+
+	callData, err := s.createTransferWithAuthorizationData(from, to, value, validAfter, validBefore, nonceBytes, signature)
 	if err != nil {
-		return "", fmt.Errorf("transfer failed: %w", err)
+		return "", fmt.Errorf("failed to create tx data: %w", err)
 	}
 
+	txHash, err := s.wallet.SubmitTransaction(ctx, usdcAddress, big.NewInt(0), callData)
+	if err != nil {
+		return "", fmt.Errorf("failed to submit transaction: %w", err)
+	}
+
+	fmt.Printf("[SubmitPayment] Transaction submitted. TxHash: %s\n", txHash.Hex())
 	return txHash.Hex(), nil
+}
+
+// createTransferWithAuthorizationData creates the call data for EIP-3009 transferWithAuthorization
+func (s *PaymentService) createTransferWithAuthorizationData(
+	from, to common.Address,
+	amount, validAfter, validBefore *big.Int,
+	nonceBytes []byte,
+	signature []byte,
+) ([]byte, error) {
+	if len(signature) != 65 {
+		return nil, fmt.Errorf("signature must be 65 bytes, got %d", len(signature))
+	}
+
+	if len(nonceBytes) != 32 {
+		return nil, fmt.Errorf("nonce must be 32 bytes, got %d", len(nonceBytes))
+	}
+
+	var nonce [32]byte
+	copy(nonce[:], nonceBytes)
+
+	callData, err := usdcABI.Pack(
+		"transferWithAuthorization",
+		from,
+		to,
+		amount,
+		validAfter,
+		validBefore,
+		nonce,
+		signature,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack ABI: %w", err)
+	}
+
+	return callData, nil
 }
 
 // VerifyPayment verifies a buyer's payment header without settling
