@@ -205,72 +205,91 @@ listings := listingService.ListListings()
 
 **Implementation:** `internal/marketplace/payment.go`, `internal/marketplace/x402.go`
 
-### Network: Base Sepolia (testnet)
+**Library:** `github.com/mark3labs/x402-go/v2`
+
+### Networks & Tokens
 
 ```go
 const NetworkBaseSepolia = "eip155:84532"
+const NetworkBaseMainnet  = "eip155:8453"
+
 const USDCBaseSepolia = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+const USDCBaseMainnet  = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 ```
 
-### Payment Types
+### Key Types
 
 ```go
-// internal/marketplace/x402.go
+// PaymentHeader — embedded in P2P execute messages
+type PaymentHeader struct {
+    Requirement PaymentRequirements  `json:"requirement"`
+    Payer       string               `json:"payer"`
+    PaymentID   string               `json:"payment_id"`
+    Signature   string               `json:"signature,omitempty"`
+    Accepted    *PaymentRequirements `json:"accepted,omitempty"`
+    Payload     *EVMPayload          `json:"payload,omitempty"`
+}
+
+// TaskExecuteRequest — sent from buyer to seller over P2P stream
 type TaskExecuteRequest struct {
-    AgentID       string         `json:"agent_id"`
-    Input         string         `json:"input"`
-    PaymentHeader *PaymentHeader `json:"payment_header,omitempty"`
+    AgentID         string         `json:"agent_id"`
+    Input           string         `json:"input"`
+    PaymentHeader   *PaymentHeader `json:"payment_header,omitempty"`
+    TransactionHash string         `json:"transaction_hash,omitempty"`
 }
 
+// PaymentRequiredResponse — returned by seller when payment is required
 type PaymentRequiredResponse struct {
-    AgentID            string              `json:"agent_id"`
-    RequestID          string              `json:"request_id"`
-    Message            string              `json:"message"`
-    PaymentRequirement *PaymentRequirement `json:"payment_requirement,omitempty"`
-    RequiresPayment    bool                `json:"requires_payment"`
+    AgentID            string               `json:"agent_id"`
+    RequestID          string               `json:"request_id"`
+    Message            string               `json:"message"`
+    PaymentRequirement *PaymentRequirements `json:"payment_requirement,omitempty"`
+    RequiresPayment    bool                 `json:"requires_payment"`
 }
 ```
 
-### Payment Flow (Current - Incomplete)
+### Implemented Payment Flow
 
 ```
 Buyer                              Seller
   │                                   │
-  │── Execute Request ───────────────►│ (no payment)
+  │── Execute Request ───────────────►│ {agentId, input, paymentHeader?}
+  │                                   │──► Check: agent requires payment?
+  │                                   │──► No payment header → return 402
   │                                   │
-  │                                   │──► Executes task (IGNORES payment check!)
+  │◄── PaymentRequired ───────────────│ {requires_payment: true, payment_requirement}
   │                                   │
-  │◄── Output ────────────────────────│
+  │  Buyer signs EIP-712 USDC auth    │
   │                                   │
+  │── Execute + Payment ──────────────►│ {agentId, input, paymentHeader}
+  │                                   │──► Step 1: Local validation
+  │                                   │     (signature, timestamp, nonce, payTo, asset)
+  │                                   │──► Step 2: Settle with facilitator (5 retries)
+  │                                   │     POST {facilitator}/settle
+  │                                   │──► Step 3: Wait for on-chain confirmation
+  │                                   │──► Step 4: Execute ADK task
+  │                                   │
+  │◄── Output + TxHash ───────────────│ {output, transaction_hash}
 ```
 
-### Expected Payment Flow (To Be Implemented)
+### PaymentService API
 
-```
-Buyer                              Seller
-  │                                   │
-  │── Execute Request ───────────────►│ (may include payment header)
-  │   {agentId, input, paymentHeader} │
-  │                                   │──► Check: needs payment?
-  │                                   │──► No payment + needs pay?
-  │                                   │      return PaymentRequiredResponse
-  │                                   │
-  │◄── PaymentRequired ───────────────│ (with payment requirement)
-  │   {payment_requirement}            │
-  │                                   │
-  │  (User sees payment request)       │
-  │                                   │
-  │── Execute + Payment ──────────────►│ (with signed payment header)
-  │   {agentId, input, paymentHeader} │
-  │                                   │──► Verify payment
-  │                                   │──► Execute task
-  │                                   │
-  │◄── Output + TxHash ───────────────│
+```go
+// Seller side
+svc.CreateRequirement(payee, amount)        // build PaymentRequirements to return in 402
+svc.VerifyAndSettle(ctx, header, amount)    // validate → settle → confirm; returns txHash
+
+// Buyer side
+svc.CreatePayment(ctx, payee, amount, orderID)   // sign and return PaymentHeader
+svc.SignRequirement(req, orderID)                // sign an existing requirement
 ```
 
 ### Facilitator
 
-The x402 facilitator (`https://facilitator.x402.rs`) is used for payment verification but should be minimal in the happy path - just on-chain verification after buyer signs.
+- Default URL: `http://localhost:8080` (configurable)
+- Endpoints: `POST /verify`, `POST /settle`
+- Settlement uses exponential back-off retry (5 attempts, starting at 500 ms)
+- On-chain mechanism: EIP-3009 `transferWithAuthorization` on the USDC contract
 
 ---
 

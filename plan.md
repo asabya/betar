@@ -110,47 +110,42 @@ betar/
 
 ---
 
-## Payment Flow (Implemented)
+## Payment Flow (Implemented — x402 v2)
 
 ```
 Buyer                              Seller
   │                                   │
   │── Execute Request ───────────────►│ {agentId, input, paymentHeader?}
   │                                   │
-  │                                   │──► 1. Get agent listing
-  │                                   │──► 2. Check if requires payment (X402Support)
-  │                                   │──► 3a. Has valid payment?
-  │                                   │         Yes → Verify → Execute → Return output
-  │                                   │         No  → Continue
-  │                                   │──► 3b. No payment + requires payment?
-  │                                   │         Return PaymentRequiredResponse
+  │                                   │──► 1. Get agent listing (X402Support flag)
+  │                                   │──► 2. No payment header → return 402
   │                                   │
-  │◄── PaymentRequired ───────────────│ {requires_payment, payment_requirement}
-  │   OR {output}                     │
+  │◄── PaymentRequired ───────────────│ {requires_payment: true, payment_requirement}
   │                                   │
-  │  (User sees payment request)       │
-  │  Signs payment                    │
+  │  Buyer calls PaymentService        │
+  │  .SignRequirement() → EIP-712 sig  │
   │                                   │
   │── Execute + Payment ──────────────►│ {agentId, input, paymentHeader}
   │                                   │
-  │                                   │──► Verify (facilitator or on-chain)
-  │                                   │──► Execute task
+  │                                   │──► Step 1: Local validation
+  │                                   │     (EIP-712 sig, timestamp, nonce, payTo, asset)
+  │                                   │──► Step 2: POST /settle to facilitator
+  │                                   │     (5 retries, exponential back-off)
+  │                                   │──► Step 3: WaitForTransaction (on-chain confirm)
+  │                                   │──► Step 4: Execute ADK task
   │                                   │
   │◄── Output + TxHash ───────────────│ {output, transaction_hash}
 ```
+
+**On-chain mechanism:** EIP-3009 `transferWithAuthorization` on USDC contract
+**Facilitator:** `http://localhost:8080` (default) — endpoints `/verify` and `/settle`
+**Library:** `github.com/mark3labs/x402-go/v2`
 
 ---
 
 ## Implementation Plan
 
-See `docs/plans/` for detailed implementation plans.
-
-### Current Plans
-
-1. **Payment Flow Implementation** - `docs/plans/payment-flow.md`
-   - Seller-side payment check
-   - PaymentRequiredResponse handling
-   - Buyer-side payment signing
+All planned components are complete. See `KNOWLEDGE_BASE.md` for detailed technical documentation.
 
 ---
 
