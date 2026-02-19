@@ -289,7 +289,7 @@ func (s *PaymentService) Sign(req *v2.PaymentRequirements) (*PaymentHeader, erro
 // Verify verifies payment with facilitator
 func (s *PaymentService) Verify(ctx context.Context, header *PaymentHeader) error {
     req := map[string]interface{}{
-        "x402Version":        1,
+        "x402Version":        2,
         "paymentPayload":     header.Payload,
         "paymentRequirements": header.Requirement,
     }

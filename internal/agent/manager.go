@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -453,15 +454,18 @@ func (m *Manager) handleExecuteRequest(ctx context.Context, from peer.ID, data [
 	// If payment provided, verify it
 	if req.PaymentHeader != nil {
 		fmt.Printf("[handleExecuteRequest] Payment header provided, verifying...\n")
-		fmt.Printf("[handleExecuteRequest] PaymentHeader - Payer: %s, PayTo: %s, Amount: %s USDC\n",
-			req.PaymentHeader.Payer, req.PaymentHeader.Requirement.PayTo, req.PaymentHeader.Requirement.MaxAmountRequired)
+		fmt.Printf("[handleExecuteRequest] PaymentHeader - Payer: %s, PayTo: %s, Amount: %s\n",
+			req.PaymentHeader.Payer, req.PaymentHeader.Requirement.PayTo, marketplace.FormatUSDC(req.PaymentHeader.Requirement.Amount))
 
 		if m.paymentService == nil {
 			return json.Marshal(map[string]string{"error": "payment service not configured"})
 		}
 
-		// Verify and settle payment (buyer submitted tx, seller verifies on-chain)
-		txHash, err := m.paymentService.VerifyAndSettle(ctx, req.PaymentHeader, req.TransactionHash)
+		// Calculate expected amount from agent price
+		expectedAmount := big.NewInt(int64(price * 1e6))
+
+		// Verify and settle payment (facilitator settles, seller waits for confirmation)
+		txHash, err := m.paymentService.VerifyAndSettle(ctx, req.PaymentHeader, expectedAmount)
 		if err != nil {
 			fmt.Printf("[handleExecuteRequest] Payment verification failed: %v\n", err)
 			return json.Marshal(map[string]string{"error": fmt.Sprintf("payment verification failed: %v", err)})
@@ -540,7 +544,7 @@ func (m *Manager) RemoteExecute(ctx context.Context, peerID peer.ID, agentID, in
 	if paymentHeader != nil {
 		req["paymentHeader"] = paymentHeader
 		fmt.Printf("[RemoteExecute] Payment header attached - Payer: %s, PayTo: %s, Amount: %s USDC\n",
-			paymentHeader.Payer, paymentHeader.Requirement.PayTo, paymentHeader.Requirement.MaxAmountRequired)
+			paymentHeader.Payer, paymentHeader.Requirement.PayTo, paymentHeader.Requirement.Amount)
 	} else {
 		fmt.Printf("[RemoteExecute] NO payment header attached - buyer is requesting without payment\n")
 	}
@@ -564,9 +568,8 @@ func (m *Manager) RemoteExecute(ctx context.Context, peerID peer.ID, agentID, in
 	if json.Unmarshal(resp, &payResp); payResp.RequiresPayment {
 		fmt.Printf("[RemoteExecute] >>> RECEIVED 402 Payment Required from seller <<<\n")
 		if payResp.PaymentRequirement != nil {
-			fmt.Printf("[RemoteExecute] Payment requirement - Amount: %s %s, PayTo: %s\n",
-				payResp.PaymentRequirement.MaxAmountRequired,
-				payResp.PaymentRequirement.Asset,
+			fmt.Printf("[RemoteExecute] Payment requirement - Amount: %s, PayTo: %s\n",
+				marketplace.FormatUSDC(payResp.PaymentRequirement.Amount),
 				payResp.PaymentRequirement.PayTo)
 		}
 		return "", &payResp, nil

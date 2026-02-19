@@ -3,22 +3,30 @@ package marketplace
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
-	"github.com/mark3labs/x402-go"
+	x402v2 "github.com/mark3labs/x402-go/v2"
 )
 
-// PaymentRequirement is an alias for x402.PaymentRequirement
-type PaymentRequirement = x402.PaymentRequirement
+// PaymentRequirements is an alias for x402 v2 PaymentRequirements
+type PaymentRequirements = x402v2.PaymentRequirements
+
+// EVMPayload is an alias for x402 v2 EVMPayload
+type EVMPayload = x402v2.EVMPayload
+
+// EVMAuthorization is an alias for x402 v2 EVMAuthorization
+type EVMAuthorization = x402v2.EVMAuthorization
 
 // PaymentHeader is embedded in P2P messages for payment
 type PaymentHeader struct {
-	Requirement x402.PaymentRequirement `json:"requirement"`
-	Payer       string                  `json:"payer"`
-	PaymentID   string                  `json:"payment_id"`
-	Signature   string                  `json:"signature,omitempty"`
+	Requirement PaymentRequirements `json:"requirement"`
+	Payer       string              `json:"payer"`
+	PaymentID   string              `json:"payment_id"`
+	Signature   string              `json:"signature,omitempty"`
 
-	Accepted *x402.PaymentRequirement `json:"accepted,omitempty"`
-	Payload  *x402.EVMPayload         `json:"payload,omitempty"`
+	Accepted *PaymentRequirements `json:"accepted,omitempty"`
+	Payload  *EVMPayload          `json:"payload,omitempty"`
 }
 
 // TaskExecuteRequest is sent for task execution with payment
@@ -39,11 +47,11 @@ type TaskExecuteResponse struct {
 
 // PaymentRequiredResponse is returned when a task requires payment before execution
 type PaymentRequiredResponse struct {
-	AgentID            string              `json:"agent_id"`
-	RequestID          string              `json:"request_id"`
-	Message            string              `json:"message"`
-	PaymentRequirement *PaymentRequirement `json:"payment_requirement,omitempty"`
-	RequiresPayment    bool                `json:"requires_payment"`
+	AgentID            string               `json:"agent_id"`
+	RequestID          string               `json:"request_id"`
+	Message            string               `json:"message"`
+	PaymentRequirement *PaymentRequirements `json:"payment_requirement,omitempty"`
+	RequiresPayment    bool                 `json:"requires_payment"`
 }
 
 // PaymentHeaderFromJSON deserializes payment header from JSON
@@ -55,12 +63,12 @@ func PaymentHeaderFromJSON(data []byte) (*PaymentHeader, error) {
 	return &ph, nil
 }
 
-// CreatePaymentRequirement creates a payment requirement from agent listing
-func CreatePaymentRequirement(network, amount, asset, payTo string, timeout int64) x402.PaymentRequirement {
-	return x402.PaymentRequirement{
+// CreatePaymentRequirements creates a payment requirement from agent listing (x402 v2 format)
+func CreatePaymentRequirements(network, amount, asset, payTo string, timeout int64) PaymentRequirements {
+	return PaymentRequirements{
 		Scheme:            "exact",
 		Network:           network,
-		MaxAmountRequired: amount,
+		Amount:            amount,
 		Asset:             asset,
 		PayTo:             payTo,
 		MaxTimeoutSeconds: int(timeout),
@@ -71,24 +79,22 @@ func CreatePaymentRequirement(network, amount, asset, payTo string, timeout int6
 	}
 }
 
+// CreatePaymentRequirement creates a payment requirement (alias for backward compatibility)
+func CreatePaymentRequirement(network, amount, asset, payTo string, timeout int64) PaymentRequirements {
+	return CreatePaymentRequirements(network, amount, asset, payTo, timeout)
+}
+
+// CAIP-2 network identifiers for x402 v2
 const (
-	NetworkEthSepolia  = "sepolia"
-	NetworkEthMainnet  = "eip155:1"
-	NetworkBaseSepolia = "base-sepolia"
+	NetworkBaseSepolia = "eip155:84532"
 	NetworkBaseMainnet = "eip155:8453"
 
-	USDCETHSepolia  = "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"
-	USDCETHMainnet  = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 	USDCBaseSepolia = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 	USDCBaseMainnet = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 )
 
 func GetUSDCAddress(network string) string {
 	switch network {
-	case NetworkEthSepolia:
-		return USDCETHSepolia
-	case NetworkEthMainnet:
-		return USDCETHMainnet
 	case NetworkBaseSepolia:
 		return USDCBaseSepolia
 	case NetworkBaseMainnet:
@@ -100,10 +106,6 @@ func GetUSDCAddress(network string) string {
 
 func GetNetworkName(network string) string {
 	switch network {
-	case NetworkEthSepolia:
-		return "ETH Sepolia"
-	case NetworkEthMainnet:
-		return "ETH Mainnet"
 	case NetworkBaseSepolia:
 		return "Base Sepolia"
 	case NetworkBaseMainnet:
@@ -111,4 +113,29 @@ func GetNetworkName(network string) string {
 	default:
 		return "Unknown"
 	}
+}
+
+const USDCDecimals = 6
+
+func AtomicToUSDC(atomicAmount string) string {
+	amount, err := strconv.ParseInt(atomicAmount, 10, 64)
+	if err != nil {
+		return "0.000000"
+	}
+	usdc := float64(amount) / float64(int64(1e6))
+	return fmt.Sprintf("%.6f", usdc)
+}
+
+func USDCToAtomic(usdcAmount float64) string {
+	atomic := int64(usdcAmount * 1e6)
+	return strconv.FormatInt(atomic, 10)
+}
+
+func FormatUSDC(atomicAmount string) string {
+	return AtomicToUSDC(atomicAmount) + " USDC"
+}
+
+func ParseAtomicAmount(amountStr string) (int64, error) {
+	amountStr = strings.TrimSpace(amountStr)
+	return strconv.ParseInt(amountStr, 10, 64)
 }

@@ -184,6 +184,15 @@ func (w *Wallet) WaitForTransaction(ctx context.Context, hash common.Hash) (*get
 	}
 }
 
+// GetTransaction retrieves a transaction by hash
+func (w *Wallet) GetTransaction(ctx context.Context, hash common.Hash) (*gethtypes.Transaction, bool, error) {
+	tx, isPending, err := w.client.TransactionByHash(ctx, hash)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get transaction: %w", err)
+	}
+	return tx, isPending, nil
+}
+
 // GenerateKey generates a new random private key
 func GenerateKey() (*ecdsa.PrivateKey, error) {
 	return crypto.GenerateKey()

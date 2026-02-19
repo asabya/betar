@@ -20,7 +20,6 @@ func RegisterAgentHandlers(r *mux.Router, agentMgr *agent.Manager, listingSvc *m
 	r.HandleFunc("/agents", h.registerAgent).Methods("POST")
 	r.HandleFunc("/agents/{id}/execute", h.executeAgent).Methods("POST")
 	r.HandleFunc("/payment/sign", h.signPayment).Methods("POST")
-	r.HandleFunc("/payment/submit", h.submitPayment).Methods("POST")
 }
 
 type agentHandler struct {
@@ -114,7 +113,7 @@ func (h *agentHandler) signPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		PaymentRequirement marketplace.PaymentRequirement `json:"paymentRequirement"`
+		PaymentRequirement marketplace.PaymentRequirements `json:"paymentRequirement"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -122,7 +121,7 @@ func (h *agentHandler) signPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Printf("[signPayment] Signing payment requirement - Amount: %s %s, PayTo: %s\n",
-		req.PaymentRequirement.MaxAmountRequired, req.PaymentRequirement.Asset, req.PaymentRequirement.PayTo)
+		req.PaymentRequirement.Amount, req.PaymentRequirement.Asset, req.PaymentRequirement.PayTo)
 
 	header, err := h.paymentSvc.SignRequirement(&req.PaymentRequirement, fmt.Sprintf("order-%d", time.Now().UnixNano()))
 	if err != nil {
@@ -132,47 +131,4 @@ func (h *agentHandler) signPayment(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("[signPayment] Payment signed successfully - Payer: %s, PaymentID: %s\n", header.Payer, header.PaymentID)
 	json.NewEncoder(w).Encode(header)
-}
-
-func (h *agentHandler) submitPayment(w http.ResponseWriter, r *http.Request) {
-	if h.paymentSvc == nil {
-		http.Error(w, "payment service not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	var req struct {
-		PaymentHeader marketplace.PaymentHeader `json:"paymentHeader"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	fmt.Printf("[submitPayment] Submitting EIP-3009 transaction - Payer: %s, PayTo: %s\n",
-		req.PaymentHeader.Payer, req.PaymentHeader.Requirement.PayTo)
-
-	ctx := r.Context()
-	txHash, err := h.paymentSvc.SubmitPayment(ctx, &req.PaymentHeader)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to submit payment: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Printf("[submitPayment] Transaction submitted - TxHash: %s\n", txHash)
-
-	// Wait for confirmation
-	fmt.Printf("[submitPayment] Waiting for transaction confirmation...\n")
-	confirmed, err := h.paymentSvc.WaitForSettlement(ctx, txHash, 2*time.Minute)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to wait for confirmation: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if !confirmed {
-		http.Error(w, "transaction not confirmed within timeout", http.StatusGatewayTimeout)
-		return
-	}
-
-	fmt.Printf("[submitPayment] Transaction confirmed!\n")
-	json.NewEncoder(w).Encode(map[string]string{"transactionHash": txHash, "status": "confirmed"})
 }

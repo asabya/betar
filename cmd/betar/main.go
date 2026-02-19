@@ -624,8 +624,14 @@ func executeAgent(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Agent: %s\n", payErr.AgentID)
 		fmt.Printf("Message: %s\n", payErr.Message)
 
+		var displayedAtomicAmount string
 		if payReq, ok := payErr.PaymentRequirement.(map[string]interface{}); ok {
-			fmt.Printf("Amount: %s USDC\n", payReq["maxAmountRequired"])
+			if atomicAmt, ok := payReq["amount"].(string); ok && atomicAmt != "" {
+				displayedAtomicAmount = atomicAmt
+				fmt.Printf("Amount: %s\n", marketplace.FormatUSDC(atomicAmt))
+			} else {
+				fmt.Printf("Amount: (unable to parse)\n")
+			}
 			if asset, ok := payReq["extra"].(map[string]interface{}); ok {
 				fmt.Printf("Asset: %s\n", asset["name"])
 			}
@@ -643,8 +649,8 @@ func executeAgent(cmd *cobra.Command, args []string) error {
 		// Sign payment and retry
 		fmt.Println("\nSigning payment...")
 
-		// Convert to marketplace.PaymentRequirement
-		var paymentReq marketplace.PaymentRequirement
+		// Convert to marketplace.PaymentRequirements
+		var paymentReq marketplace.PaymentRequirements
 		if reqBytes, err := json.Marshal(payErr.PaymentRequirement); err == nil {
 			json.Unmarshal(reqBytes, &paymentReq)
 		}
@@ -657,33 +663,23 @@ func executeAgent(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to sign payment: %w", signErr)
 		}
 
-		fmt.Printf("Payment signed. PaymentID: %s\n", paymentHeader.PaymentID)
-
-		// Submit the EIP-3009 transaction
-		fmt.Println("\nSubmitting payment transaction...")
-
-		var submitResp struct {
-			TransactionHash string `json:"transactionHash"`
-			Status          string `json:"status"`
-		}
-		if submitErr := client.Post("/payment/submit", map[string]interface{}{
-			"paymentHeader": paymentHeader,
-		}, &submitResp); submitErr != nil {
-			return fmt.Errorf("failed to submit payment: %w", submitErr)
+		// Validate that signed amount matches what was displayed to user
+		if displayedAtomicAmount != "" && paymentHeader.Requirement.Amount != displayedAtomicAmount {
+			return fmt.Errorf("SECURITY WARNING: signed amount (%s) does not match displayed amount (%s). Aborting.",
+				paymentHeader.Requirement.Amount, displayedAtomicAmount)
 		}
 
-		fmt.Printf("Transaction submitted. TxHash: %s, Status: %s\n", submitResp.TransactionHash, submitResp.Status)
+		fmt.Printf("Payment signed. PaymentID: %s, Amount: %s\n", paymentHeader.PaymentID, marketplace.FormatUSDC(paymentHeader.Requirement.Amount))
 
-		// Retry with payment and transaction hash
+		// Retry with payment (seller will settle via facilitator)
 		var respWithPayment struct {
 			Output    string `json:"output"`
 			Error     string `json:"error"`
 			PaymentID string `json:"paymentId"`
 		}
 		if err := client.Post(fmt.Sprintf("/agents/%s/execute", agentID), map[string]interface{}{
-			"input":           task,
-			"paymentHeader":   paymentHeader,
-			"transactionHash": submitResp.TransactionHash,
+			"input":         task,
+			"paymentHeader": paymentHeader,
 		}, &respWithPayment); err != nil {
 			return err
 		}
