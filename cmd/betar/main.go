@@ -25,19 +25,20 @@ import (
 )
 
 var (
-	cfg            *config.Config
-	ctx            context.Context
-	cancel         context.CancelFunc
-	p2pHost        *p2p.Host
-	p2pPubSub      *p2p.PubSub
-	streamHandler  *p2p.StreamHandler
-	discovery      *p2p.Discovery
-	agentManager   *agent.Manager
-	listingService *marketplace.AgentListingService
-	orderService   *marketplace.OrderService
-	paymentService *marketplace.PaymentService
-	ipfsClient     *ipfs.Client
-	apiServer      *api.Server
+	cfg               *config.Config
+	ctx               context.Context
+	cancel            context.CancelFunc
+	p2pHost           *p2p.Host
+	p2pPubSub         *p2p.PubSub
+	streamHandler     *p2p.StreamHandler
+	x402StreamHandler *p2p.X402StreamHandler
+	discovery         *p2p.Discovery
+	agentManager      *agent.Manager
+	listingService    *marketplace.AgentListingService
+	orderService      *marketplace.OrderService
+	paymentService    *marketplace.PaymentService
+	ipfsClient        *ipfs.Client
+	apiServer         *api.Server
 )
 
 var rootCmd = &cobra.Command{
@@ -130,7 +131,6 @@ func init() {
 	agentServeCmd.Flags().Float64P("price", "r", 0, "Price per task")
 	agentServeCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
 	agentServeCmd.Flags().String("framework", "adk", "Agent framework")
-	agentServeCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
 	_ = agentServeCmd.MarkFlagRequired("name")
 
 	// Unified start flags
@@ -142,7 +142,6 @@ func init() {
 	startCmd.Flags().Float64P("price", "r", 0, "Price per task")
 	startCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
 	startCmd.Flags().String("framework", "adk", "Agent framework")
-	startCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
 	startCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	startCmd.Flags().Int("api-port", 8424, "HTTP API server port")
 	_ = startCmd.MarkFlagRequired("name")
@@ -152,7 +151,6 @@ func init() {
 	agentRegisterCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentRegisterCmd.Flags().Float64P("price", "p", 0, "Price per task")
 	agentRegisterCmd.Flags().String("endpoint", "", "Agent endpoint")
-	agentRegisterCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
 
 	// Agent list flags
 	agentListCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -222,7 +220,6 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	endpoint, _ := cmd.Flags().GetString("endpoint")
 	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
-	x402, _ := cmd.Flags().GetBool("x402")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:        name,
@@ -231,7 +228,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 		Price:       price,
 		Framework:   framework,
 		Model:       model,
-		X402Support: x402,
+		X402Support: true,
 		Services: []types.Service{{
 			Name:     "p2p",
 			Endpoint: endpoint,
@@ -250,7 +247,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 			Metadata:  registered.MetadataCID,
 			SellerID:  p2pHost.ID().String(),
 			Addrs:     p2pHost.AddrStrings(),
-			Protocols: []string{string(p2p.ProtocolID)},
+			Protocols: []string{string(p2p.ProtocolID), p2p.X402ProtocolID},
 			Timestamp: time.Now().Unix(),
 		})
 	}
@@ -304,6 +301,21 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return &msg
 	})
 
+	if paymentService != nil {
+		go func() {
+			ticker := time.NewTicker(2 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					paymentService.CleanupExpiredChallenges()
+				}
+			}
+		}()
+	}
+
 	fmt.Println("Betar Started (single process)")
 	printRuntimeInfo()
 	fmt.Printf("Agent ID: %s\n", registered.ID)
@@ -343,6 +355,7 @@ func initRuntime(cmd *cobra.Command) error {
 	}
 
 	streamHandler = p2p.NewStreamHandler(p2pHost.RawHost())
+	x402StreamHandler = p2p.NewX402StreamHandler(p2pHost.RawHost())
 
 	discovery, err = p2p.NewDiscovery(ctx, p2pHost.RawHost(), cfg.P2P)
 	if err != nil {
@@ -393,6 +406,9 @@ func initRuntime(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to create agent manager: %w", err)
 	}
 
+	// Wire up the x402 stream handler so the agent manager can serve /x402/libp2p/1.0.0 requests.
+	agentManager.RegisterX402Handlers(x402StreamHandler)
+
 	orderService = marketplace.NewOrderService(streamHandler, p2pHost, p2pHost.ID())
 
 	return nil
@@ -428,7 +444,6 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 	endpoint, _ := cmd.Flags().GetString("endpoint")
 	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
-	x402, _ := cmd.Flags().GetBool("x402")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:        name,
@@ -437,7 +452,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		Price:       price,
 		Framework:   framework,
 		Model:       model,
-		X402Support: x402,
+		X402Support: true,
 		Services: []types.Service{{
 			Name:     "p2p",
 			Endpoint: endpoint,
@@ -447,6 +462,8 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		return nil, nil, fmt.Errorf("failed to register serving agent: %w", err)
 	}
 
+	protocols := []string{string(p2p.ProtocolID), p2p.X402ProtocolID}
+
 	listing := &types.AgentListingMessage{
 		Type:      "list",
 		AgentID:   registered.ID,
@@ -455,7 +472,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		Metadata:  registered.MetadataCID,
 		SellerID:  p2pHost.ID().String(),
 		Addrs:     p2pHost.AddrStrings(),
-		Protocols: []string{string(p2p.ProtocolID)},
+		Protocols: protocols,
 		Timestamp: time.Now().Unix(),
 	}
 
@@ -530,14 +547,13 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
 	endpoint, _ := cmd.Flags().GetString("endpoint")
-	x402, _ := cmd.Flags().GetBool("x402")
 
 	spec := agent.AgentSpec{
 		Name:        name,
 		Description: description,
 		Price:       price,
 		Endpoint:    endpoint,
-		X402Support: x402,
+		X402Support: true,
 		Services: []types.Service{
 			{Name: "default", Endpoint: endpoint},
 		},
@@ -601,15 +617,15 @@ func discoverAgents(cmd *cobra.Command, args []string) error {
 }
 
 func executeAgent(cmd *cobra.Command, args []string) error {
-	apiURL, _ := cmd.Flags().GetString("api-url")
-	client := api.NewClient(apiURL)
-
 	agentID, _ := cmd.Flags().GetString("agent-id")
 	task, _ := cmd.Flags().GetString("task")
 
 	if agentID == "" || task == "" {
 		return fmt.Errorf("agent-id and task are required")
 	}
+
+	apiURL, _ := cmd.Flags().GetString("api-url")
+	client := api.NewClient(apiURL)
 
 	// First attempt - without payment
 	var resp struct {

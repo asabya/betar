@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -13,6 +14,7 @@ import (
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/pkg/types"
+	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -20,13 +22,14 @@ import (
 
 // Manager manages agent lifecycle
 type Manager struct {
-	runtime        Runtime
-	ipfsClient     *ipfs.Client
-	p2pHost        *p2p.Host
-	streamHandler  *p2p.StreamHandler
-	listingService *marketplace.AgentListingService
-	paymentService *marketplace.PaymentService
-	walletAddress  string
+	runtime            Runtime
+	ipfsClient         *ipfs.Client
+	p2pHost            *p2p.Host
+	streamHandler      *p2p.StreamHandler
+	x402StreamHandler  *p2p.X402StreamHandler
+	listingService     *marketplace.AgentListingService
+	paymentService     *marketplace.PaymentService
+	walletAddress      string
 
 	mu          sync.RWMutex
 	localAgents map[string]*LocalAgent
@@ -182,6 +185,15 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID, input string, paymen
 			}
 
 			fmt.Printf("[ExecuteTask] Connected to peer %s, executing remotely\n", peerID)
+
+			// Auto-negotiate: prefer x402 if the listing advertises it.
+			for _, proto := range listing.Protocols {
+				if proto == p2p.X402ProtocolID {
+					fmt.Printf("[ExecuteTask] Listing supports x402, using /x402/libp2p/1.0.0\n")
+					output, err := m.RemoteExecuteX402(ctx, peerID, runtimeAgentID, input)
+					return output, nil, err
+				}
+			}
 			return m.RemoteExecute(ctx, peerID, runtimeAgentID, input, paymentHeader, transactionHash)
 		}
 		fmt.Printf("[ExecuteTask] Agent not found in CRDT listings\n")
@@ -191,6 +203,11 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID, input string, paymen
 
 	fmt.Printf("[ExecuteTask] Agent not found: %s\n", agentID)
 	return "", nil, fmt.Errorf("agent not found: %s", agentID)
+}
+
+// FindListingByAgentID is the exported version of findListingByAgentID.
+func (m *Manager) FindListingByAgentID(agentID string) (*types.AgentListing, string) {
+	return m.findListingByAgentID(agentID)
 }
 
 // findListingByAgentID looks up a listing by agent ID in the CRDT.
@@ -506,6 +523,413 @@ func (m *Manager) handleInfoRequest(ctx context.Context, from peer.ID, data []by
 	}
 
 	return json.Marshal(agent)
+}
+
+// RegisterX402Handlers wires up the x402 stream handler and stores a reference for client use.
+func (m *Manager) RegisterX402Handlers(sh *p2p.X402StreamHandler) {
+	m.x402StreamHandler = sh
+	sh.RegisterHandler(marketplace.MsgTypeX402Request, m.handleX402Request)
+	sh.RegisterHandler(marketplace.MsgTypeX402PaidRequest, m.handleX402PaidRequest)
+}
+
+// handleX402Request is the server-side handler for x402.request messages.
+// If the agent requires payment and the request carries no payment, it issues a challenge nonce
+// and returns x402.payment_required. If payment is already attached (preemptive), it is
+// forwarded to handleX402WithPayment. Free agents are executed directly.
+func (m *Manager) handleX402Request(ctx context.Context, from peer.ID, _ string, data []byte) (string, []byte, error) {
+	var req marketplace.X402Request
+	if err := json.Unmarshal(data, &req); err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrInvalidMessage,
+			fmt.Sprintf("failed to unmarshal x402.request: %v", err))
+	}
+
+	fmt.Printf("[handleX402Request] peer=%s corr=%s resource=%s\n", from, req.CorrelationID, req.Resource)
+
+	price := m.agentPrice(req.Resource)
+
+	// Preemptive payment provided by the client.
+	if req.Payment != nil {
+		return m.handleX402WithPayment(ctx, from, &req, price, req.Payment)
+	}
+
+	// No payment — free agent, execute directly.
+	if price == 0 {
+		return m.executeAndRespond(ctx, req.CorrelationID, req.Resource, req.Body)
+	}
+
+	// Payment required: generate challenge nonce.
+	if m.paymentService == nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrPaymentRequired,
+			"payment service not configured on seller")
+	}
+
+	challenge, err := m.paymentService.GenerateChallenge(req.CorrelationID, 5*time.Minute)
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrPaymentRequired,
+			fmt.Sprintf("failed to generate challenge: %v", err))
+	}
+
+	payReq, err := m.paymentService.CreateRequirement(m.walletAddress,
+		fmt.Sprintf("%d", int(price*1e6)))
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrPaymentRequired,
+			fmt.Sprintf("failed to create payment requirement: %v", err))
+	}
+
+	pr := marketplace.X402PaymentRequired{
+		Version:             marketplace.X402LibP2PVersion,
+		CorrelationID:       req.CorrelationID,
+		ChallengeNonce:      challenge.Nonce,
+		ChallengeExpiresAt:  challenge.ExpiresAt.Unix(),
+		PaymentRequirements: payReq,
+		Message:             "Payment required",
+	}
+	respData, err := json.Marshal(pr)
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrPaymentRequired, err.Error())
+	}
+
+	fmt.Printf("[handleX402Request] issued challenge nonce=%s corr=%s\n", challenge.Nonce, req.CorrelationID)
+	return marketplace.MsgTypeX402PaymentRequired, respData, nil
+}
+
+// handleX402PaidRequest is the server-side handler for x402.paid_request messages.
+func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ string, data []byte) (string, []byte, error) {
+	var req marketplace.X402PaidRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrInvalidMessage,
+			fmt.Sprintf("failed to unmarshal x402.paid_request: %v", err))
+	}
+
+	fmt.Printf("[handleX402PaidRequest] peer=%s corr=%s server_nonce=%s\n", from, req.CorrelationID, req.Payment.ServerNonce)
+
+	price := m.agentPrice(req.Payment.Payer) // fallback; actual agent is embedded in body
+	// The resource is not in paid_request directly; determine from the original x402.request
+	// which stored it before the challenge. We'll use the payer/resource from the payment envelope.
+	// NOTE: The agent resource is encoded in req.Body (decoded below).
+
+	// Standard flow: validate challenge nonce matches what was issued.
+	if req.Payment.ServerNonce != marketplace.PreemptiveNonce {
+		challenge, err := m.paymentService.ConsumeChallenge(req.CorrelationID)
+		if err != nil {
+			return sendX402Error(req.CorrelationID, marketplace.ErrNonceExpired,
+				fmt.Sprintf("challenge expired or unknown: %v", err))
+		}
+		if challenge.Nonce != req.Payment.ServerNonce {
+			return sendX402Error(req.CorrelationID, marketplace.ErrNonceMismatch,
+				fmt.Sprintf("nonce mismatch: expected %s, got %s", challenge.Nonce, req.Payment.ServerNonce))
+		}
+		// Also verify the EIP-712 auth nonce matches.
+		if req.Payment.Payload != nil && req.Payment.Payload.Authorization.Nonce != "" {
+			authNonce := req.Payment.Payload.Authorization.Nonce
+			if strings.HasPrefix(authNonce, "0x") || strings.HasPrefix(authNonce, "0X") {
+				authNonce = authNonce[2:]
+			}
+			if authNonce != challenge.Nonce {
+				return sendX402Error(req.CorrelationID, marketplace.ErrNonceMismatch,
+					"EIP-712 auth nonce does not match challenge nonce")
+			}
+		}
+	}
+
+	header := envelopeToPaymentHeader(&req.Payment)
+
+	// Decode the body to find the resource (agent ID) and input.
+	var bodyPayload struct {
+		Resource string `json:"resource"`
+		Input    string `json:"input"`
+	}
+	if len(req.Body) > 0 {
+		_ = json.Unmarshal(req.Body, &bodyPayload)
+	}
+	resource := bodyPayload.Resource
+	if resource == "" {
+		return sendX402Error(req.CorrelationID, marketplace.ErrInvalidMessage, "missing resource in body")
+	}
+
+	price = m.agentPrice(resource)
+
+	if m.paymentService == nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrPaymentInvalid, "payment service not configured")
+	}
+
+	expectedAmount := big.NewInt(int64(price * 1e6))
+	txHash, err := m.paymentService.VerifyAndSettle(ctx, header, expectedAmount)
+	if err != nil {
+		fmt.Printf("[handleX402PaidRequest] VerifyAndSettle failed: %v\n", err)
+		return sendX402Error(req.CorrelationID, marketplace.ErrSettlementFailed,
+			fmt.Sprintf("payment verification/settlement failed: %v", err))
+	}
+
+	fmt.Printf("[handleX402PaidRequest] payment settled txHash=%s\n", txHash)
+
+	output, _, err := m.ExecuteTask(ctx, resource, bodyPayload.Input, nil, txHash)
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
+	}
+
+	respBody, _ := json.Marshal(map[string]string{"output": output})
+	resp := marketplace.X402Response{
+		Version:       marketplace.X402LibP2PVersion,
+		CorrelationID: req.CorrelationID,
+		PaymentID:     header.PaymentID,
+		TxHash:        txHash,
+		Body:          respBody,
+	}
+	respData, err := json.Marshal(resp)
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
+	}
+	return marketplace.MsgTypeX402Response, respData, nil
+}
+
+// handleX402WithPayment handles a preemptive-payment path from handleX402Request.
+func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *marketplace.X402Request, price float64, env *marketplace.X402PaymentEnvelope) (string, []byte, error) {
+	fmt.Printf("[handleX402WithPayment] preemptive payment corr=%s\n", req.CorrelationID)
+
+	if m.paymentService == nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrPaymentInvalid, "payment service not configured")
+	}
+
+	header := envelopeToPaymentHeader(env)
+	expectedAmount := big.NewInt(int64(price * 1e6))
+
+	txHash, err := m.paymentService.VerifyAndSettle(ctx, header, expectedAmount)
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrSettlementFailed,
+			fmt.Sprintf("settlement failed: %v", err))
+	}
+
+	var bodyPayload struct {
+		Input string `json:"input"`
+	}
+	if len(req.Body) > 0 {
+		_ = json.Unmarshal(req.Body, &bodyPayload)
+	}
+
+	output, _, err := m.ExecuteTask(ctx, req.Resource, bodyPayload.Input, nil, txHash)
+	if err != nil {
+		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
+	}
+
+	respBody, _ := json.Marshal(map[string]string{"output": output})
+	resp := marketplace.X402Response{
+		Version:       marketplace.X402LibP2PVersion,
+		CorrelationID: req.CorrelationID,
+		PaymentID:     header.PaymentID,
+		TxHash:        txHash,
+		Body:          respBody,
+	}
+	respData, _ := json.Marshal(resp)
+	return marketplace.MsgTypeX402Response, respData, nil
+}
+
+// executeAndRespond executes a free agent and returns an x402.response.
+func (m *Manager) executeAndRespond(ctx context.Context, correlationID, resource string, rawBody []byte) (string, []byte, error) {
+	var bodyPayload struct {
+		Input string `json:"input"`
+	}
+	if len(rawBody) > 0 {
+		_ = json.Unmarshal(rawBody, &bodyPayload)
+	}
+
+	output, _, err := m.ExecuteTask(ctx, resource, bodyPayload.Input, nil, "")
+	if err != nil {
+		return sendX402Error(correlationID, marketplace.ErrExecutionFailed, err.Error())
+	}
+
+	respBody, _ := json.Marshal(map[string]string{"output": output})
+	resp := marketplace.X402Response{
+		Version:       marketplace.X402LibP2PVersion,
+		CorrelationID: correlationID,
+		Body:          respBody,
+	}
+	respData, _ := json.Marshal(resp)
+	return marketplace.MsgTypeX402Response, respData, nil
+}
+
+// RemoteExecuteX402 executes a task on a remote agent using the /x402/libp2p/1.0.0 protocol.
+// It performs the standard 2-trip flow: send x402.request → receive x402.payment_required →
+// sign with challenge nonce → send x402.paid_request → receive x402.response.
+func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID, input string) (string, error) {
+	if m.x402StreamHandler == nil {
+		return "", fmt.Errorf("x402 stream handler not configured")
+	}
+
+	correlationID := uuid.New().String()
+	bodyPayload := map[string]string{"resource": agentID, "input": input}
+	bodyBytes, _ := json.Marshal(bodyPayload)
+
+	req := marketplace.X402Request{
+		Version:       marketplace.X402LibP2PVersion,
+		CorrelationID: correlationID,
+		Resource:      agentID,
+		Method:        "execute",
+		Payment:       nil,
+		Body:          bodyBytes,
+	}
+	reqData, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal x402.request: %w", err)
+	}
+
+	fmt.Printf("[RemoteExecuteX402] sending x402.request to %s corr=%s\n", peerID, correlationID)
+	respType, respData, err := m.x402StreamHandler.SendX402Message(ctx, peerID, marketplace.MsgTypeX402Request, reqData)
+	if err != nil {
+		return "", fmt.Errorf("x402.request failed: %w", err)
+	}
+
+	switch respType {
+	case marketplace.MsgTypeX402Response:
+		return extractX402Output(respData)
+
+	case marketplace.MsgTypeX402PaymentRequired:
+		var pr marketplace.X402PaymentRequired
+		if err := json.Unmarshal(respData, &pr); err != nil {
+			return "", fmt.Errorf("failed to unmarshal x402.payment_required: %w", err)
+		}
+		fmt.Printf("[RemoteExecuteX402] received payment_required challenge_nonce=%s\n", pr.ChallengeNonce)
+
+		if m.paymentService == nil {
+			return "", fmt.Errorf("payment service not configured; cannot pay for x402 agent")
+		}
+
+		header, err := m.paymentService.SignRequirementWithNonce(pr.PaymentRequirements, pr.ChallengeNonce)
+		if err != nil {
+			return "", fmt.Errorf("failed to sign payment with nonce: %w", err)
+		}
+
+		env := paymentHeaderToEnvelope(header, pr.ChallengeNonce)
+		paidReq := marketplace.X402PaidRequest{
+			Version:       marketplace.X402LibP2PVersion,
+			CorrelationID: correlationID,
+			Payment:       env,
+			Body:          bodyBytes,
+		}
+		paidData, err := json.Marshal(paidReq)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal x402.paid_request: %w", err)
+		}
+
+		fmt.Printf("[RemoteExecuteX402] sending x402.paid_request to %s corr=%s\n", peerID, correlationID)
+		respType2, respData2, err := m.x402StreamHandler.SendX402Message(ctx, peerID, marketplace.MsgTypeX402PaidRequest, paidData)
+		if err != nil {
+			return "", fmt.Errorf("x402.paid_request failed: %w", err)
+		}
+
+		switch respType2 {
+		case marketplace.MsgTypeX402Response:
+			return extractX402Output(respData2)
+		case marketplace.MsgTypeX402Error:
+			return extractX402ErrorMessage(respData2)
+		default:
+			return "", fmt.Errorf("unexpected response type to paid_request: %s", respType2)
+		}
+
+	case marketplace.MsgTypeX402Error:
+		return extractX402ErrorMessage(respData)
+
+	default:
+		return "", fmt.Errorf("unexpected response type to x402.request: %s", respType)
+	}
+}
+
+// agentPrice returns the price for a given agent ID (checks local then CRDT).
+func (m *Manager) agentPrice(agentID string) float64 {
+	m.mu.RLock()
+	la, ok := m.localAgents[agentID]
+	m.mu.RUnlock()
+	if ok && la != nil {
+		return la.Price
+	}
+	if m.listingService != nil {
+		if listing, ok := m.listingService.GetListing(agentID); ok {
+			return listing.Price
+		}
+	}
+	return 0
+}
+
+// sendX402Error is a convenience helper that marshals an X402Error and returns the typed tuple.
+func sendX402Error(correlationID string, code marketplace.X402ErrorCode, message string) (string, []byte, error) {
+	e := marketplace.NewX402Error(correlationID, code, message)
+	data, _ := json.Marshal(e)
+	return marketplace.MsgTypeX402Error, data, nil
+}
+
+// envelopeToPaymentHeader converts an X402PaymentEnvelope to the legacy PaymentHeader type
+// used by PaymentService.VerifyAndSettle.
+func envelopeToPaymentHeader(env *marketplace.X402PaymentEnvelope) *marketplace.PaymentHeader {
+	if env == nil {
+		return nil
+	}
+	req := marketplace.CreatePaymentRequirements(
+		env.Network,
+		"", // Amount comes from Payload.Authorization.Value
+		marketplace.GetUSDCAddress(env.Network),
+		"", // PayTo comes from Payload.Authorization.To
+		marketplace.DefaultTimeout,
+	)
+	if env.Payload != nil {
+		req.Amount = env.Payload.Authorization.Value
+		req.PayTo = env.Payload.Authorization.To
+	}
+	var sig string
+	if env.Payload != nil {
+		sig = env.Payload.Signature
+	}
+	return &marketplace.PaymentHeader{
+		Requirement: req,
+		Accepted:    &req,
+		Payer:       env.Payer,
+		PaymentID:   "",
+		Signature:   sig,
+		Payload:     env.Payload,
+	}
+}
+
+// paymentHeaderToEnvelope converts a PaymentHeader to an X402PaymentEnvelope for the wire.
+func paymentHeaderToEnvelope(ph *marketplace.PaymentHeader, serverNonce string) marketplace.X402PaymentEnvelope {
+	return marketplace.X402PaymentEnvelope{
+		X402Version: 2,
+		Scheme:      ph.Requirement.Scheme,
+		Network:     ph.Requirement.Network,
+		ServerNonce: serverNonce,
+		Payer:       ph.Payer,
+		Payload:     ph.Payload,
+	}
+}
+
+// extractX402Output parses an x402.response and returns the output string.
+func extractX402Output(data []byte) (string, error) {
+	var resp marketplace.X402Response
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal x402.response: %w", err)
+	}
+	fmt.Printf("[RemoteExecuteX402] tx_hash=%s payment_id=%s\n", resp.TxHash, resp.PaymentID)
+	if len(resp.Body) == 0 {
+		return "", nil
+	}
+	// Body is a JSON object with an "output" key; decode it.
+	var body map[string]string
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		// Fallback: treat as base64-encoded raw string.
+		decoded, err2 := base64.StdEncoding.DecodeString(string(resp.Body))
+		if err2 != nil {
+			return string(resp.Body), nil
+		}
+		return string(decoded), nil
+	}
+	return body["output"], nil
+}
+
+// extractX402ErrorMessage parses an x402.error and returns an error.
+func extractX402ErrorMessage(data []byte) (string, error) {
+	var e marketplace.X402Error
+	if err := json.Unmarshal(data, &e); err != nil {
+		return "", fmt.Errorf("x402 error (unparseable): %s", string(data))
+	}
+	return "", fmt.Errorf("x402 error %d (%s): %s", e.ErrorCode, e.ErrorName, e.Message)
 }
 
 // AgentSpec represents agent specification for registration

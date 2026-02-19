@@ -359,12 +359,22 @@ func LoadOrCreateWallet(walletPath, password, rpcURL string) (*Wallet, error) {
 	return NewWallet(privateKeyHex, rpcURL)
 }
 
-// Sign signs data with the wallet's private key
+// Sign signs data with the wallet's private key (hashes the data first with Keccak256).
 func (w *Wallet) Sign(data []byte) ([]byte, error) {
 	hash := crypto.Keccak256Hash(data)
 	signature, err := crypto.Sign(hash.Bytes(), w.privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
+	}
+	return signature, nil
+}
+
+// SignRaw signs a pre-computed digest directly without additional hashing.
+// Use this for EIP-712 digests that are already keccak256 hashes.
+func (w *Wallet) SignRaw(digest []byte) ([]byte, error) {
+	signature, err := crypto.Sign(digest, w.privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign digest: %w", err)
 	}
 	return signature, nil
 }

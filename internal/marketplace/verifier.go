@@ -165,6 +165,16 @@ func hexDecode(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
+// ComputeEIP712Digest builds the EIP-712 typed-data digest for the given authorization.
+// This can be used externally (e.g., by PaymentService.SignRequirementWithNonce) to sign
+// with a specific nonce rather than a randomly-generated one.
+func (v *PaymentVerifier) ComputeEIP712Digest(auth *EVMAuthorization) ([]byte, error) {
+	chainID := v.getChainID()
+	usdcAddr := common.HexToAddress(GetUSDCAddress(v.network))
+	typedData := v.buildTypedData(usdcAddr, chainID, auth)
+	return v.computeDigest(typedData)
+}
+
 func (v *PaymentVerifier) CheckAndMarkNonce(nonce string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()

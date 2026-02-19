@@ -3,6 +3,7 @@ package marketplace
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	x402v2 "github.com/mark3labs/x402-go/v2"
@@ -25,12 +27,30 @@ const (
 	DefaultTimeout = 60
 )
 
+// Challenge is a server-issued nonce binding a payment to a specific interaction.
+type Challenge struct {
+	CorrelationID string
+	Nonce         string
+	ExpiresAt     time.Time
+}
+
+// ChallengeStore stores pending challenges keyed by correlation ID.
+type ChallengeStore struct {
+	mu         sync.Mutex
+	challenges map[string]*Challenge
+}
+
+func newChallengeStore() *ChallengeStore {
+	return &ChallengeStore{challenges: make(map[string]*Challenge)}
+}
+
 type PaymentService struct {
-	wallet      *eth.Wallet
-	paymentAddr string
-	network     string
-	facilitator string
-	verifier    *PaymentVerifier
+	wallet         *eth.Wallet
+	paymentAddr    string
+	network        string
+	facilitator    string
+	verifier       *PaymentVerifier
+	challengeStore *ChallengeStore
 }
 
 type FacilitatorVerifyRequest struct {
@@ -48,12 +68,128 @@ type FacilitatorVerifyResponse struct {
 
 func NewPaymentService(wallet *eth.Wallet, paymentAddr string) *PaymentService {
 	return &PaymentService{
-		wallet:      wallet,
-		paymentAddr: paymentAddr,
-		network:     NetworkBaseSepolia,
-		facilitator: FacilitatorURL,
-		verifier:    NewPaymentVerifier(NetworkBaseSepolia),
+		wallet:         wallet,
+		paymentAddr:    paymentAddr,
+		network:        NetworkBaseSepolia,
+		facilitator:    FacilitatorURL,
+		verifier:       NewPaymentVerifier(NetworkBaseSepolia),
+		challengeStore: newChallengeStore(),
 	}
+}
+
+// GenerateChallenge creates a fresh server nonce bound to the given correlation ID.
+// ttl controls how long the challenge is valid before expiry.
+func (s *PaymentService) GenerateChallenge(correlationID string, ttl time.Duration) (*Challenge, error) {
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+
+	c := &Challenge{
+		CorrelationID: correlationID,
+		Nonce:         nonce,
+		ExpiresAt:     time.Now().Add(ttl),
+	}
+
+	s.challengeStore.mu.Lock()
+	s.challengeStore.challenges[correlationID] = c
+	s.challengeStore.mu.Unlock()
+
+	return c, nil
+}
+
+// ConsumeChallenge retrieves and deletes a challenge by correlation ID.
+// Returns an error if the challenge is unknown or has expired.
+func (s *PaymentService) ConsumeChallenge(correlationID string) (*Challenge, error) {
+	s.challengeStore.mu.Lock()
+	defer s.challengeStore.mu.Unlock()
+
+	c, ok := s.challengeStore.challenges[correlationID]
+	if !ok {
+		return nil, fmt.Errorf("challenge not found for correlation_id: %s", correlationID)
+	}
+	delete(s.challengeStore.challenges, correlationID)
+
+	if time.Now().After(c.ExpiresAt) {
+		return nil, fmt.Errorf("challenge expired for correlation_id: %s", correlationID)
+	}
+
+	return c, nil
+}
+
+// CleanupExpiredChallenges removes challenges that have passed their expiry time.
+func (s *PaymentService) CleanupExpiredChallenges() {
+	now := time.Now()
+	s.challengeStore.mu.Lock()
+	defer s.challengeStore.mu.Unlock()
+
+	for id, c := range s.challengeStore.challenges {
+		if now.After(c.ExpiresAt) {
+			delete(s.challengeStore.challenges, id)
+		}
+	}
+}
+
+// SignRequirementWithNonce signs a PaymentRequirements using a specific serverNonce
+// (e.g., a challenge nonce issued by the server) instead of a randomly-generated one.
+// The serverNonce must be a 32-byte value encoded as lowercase hex (with or without 0x prefix).
+func (s *PaymentService) SignRequirementWithNonce(req *PaymentRequirements, serverNonce string) (*PaymentHeader, error) {
+	if s.wallet == nil {
+		return nil, fmt.Errorf("wallet not configured")
+	}
+
+	// Normalize nonce to "0x"-prefixed hex.
+	normalizedNonce := serverNonce
+	if !strings.HasPrefix(normalizedNonce, "0x") && !strings.HasPrefix(normalizedNonce, "0X") {
+		normalizedNonce = "0x" + normalizedNonce
+	}
+
+	now := time.Now()
+	validAfter := now.Add(-5 * time.Second).Unix()
+	timeout := req.MaxTimeoutSeconds
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	validBefore := now.Add(time.Duration(timeout) * time.Second).Unix()
+
+	auth := &EVMAuthorization{
+		From:        s.wallet.AddressHex(),
+		To:          req.PayTo,
+		Value:       req.Amount,
+		ValidAfter:  fmt.Sprintf("%d", validAfter),
+		ValidBefore: fmt.Sprintf("%d", validBefore),
+		Nonce:       normalizedNonce,
+	}
+
+	digest, err := s.verifier.ComputeEIP712Digest(auth)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute EIP-712 digest: %w", err)
+	}
+
+	sig, err := s.wallet.SignRaw(digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign digest: %w", err)
+	}
+
+	sigHex := "0x" + hex.EncodeToString(sig)
+	payload := &EVMPayload{
+		Signature:     sigHex,
+		Authorization: *auth,
+	}
+
+	paymentID := generatePaymentID(s.wallet.AddressHex(), req.PayTo, req.Amount, req.Network)
+
+	header := &PaymentHeader{
+		Requirement: *req,
+		Accepted:    req,
+		Payer:       s.wallet.AddressHex(),
+		PaymentID:   paymentID,
+		Signature:   sigHex,
+		Payload:     payload,
+	}
+
+	return header, nil
 }
 
 func (s *PaymentService) GetPaymentAddress() string {
