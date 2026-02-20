@@ -58,9 +58,8 @@ type AgentConfig struct {
 
 // StorageConfig holds local persistent storage configuration
 type StorageConfig struct {
-	DataDir       string
-	P2PKeyPath    string
-	WalletKeyPath string
+	DataDir    string
+	P2PKeyPath string
 }
 
 // LoadConfig loads configuration from environment
@@ -95,15 +94,13 @@ func LoadConfig() (*Config, error) {
 
 	dataDir := getEnv("BETAR_DATA_DIR", defaultDataDir())
 	keyPath := getEnv("BETAR_P2P_KEY_PATH", filepath.Join(dataDir, "p2p_identity.key"))
-	walletKeyPath := getEnv("BETAR_WALLET_KEY_PATH", filepath.Join(dataDir, "wallet.key"))
 
 	cfg.Storage.DataDir = dataDir
 	cfg.Storage.P2PKeyPath = keyPath
-	cfg.Storage.WalletKeyPath = walletKeyPath
 
 	// If no private key from env, load or generate wallet key
 	if cfg.Ethereum.PrivateKey == "" {
-		walletKey, err := loadOrCreateWalletKey(cfg.Storage.WalletKeyPath)
+		walletKey, err := loadOrCreateWalletKey(filepath.Join(dataDir, "wallet.key"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to load or create wallet key: %w", err)
 		}
