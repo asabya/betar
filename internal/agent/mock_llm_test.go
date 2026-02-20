@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -135,7 +136,7 @@ func TestMockLLM_ConcurrentAccess(t *testing.T) {
 					return
 				}
 				if resp.Content.Parts[0].Text != "safe response" {
-					errChan <- err
+					errChan <- fmt.Errorf("unexpected response: got %q, want %q", resp.Content.Parts[0].Text, "safe response")
 					return
 				}
 			}

@@ -10,14 +10,29 @@ import (
 	"google.golang.org/genai"
 )
 
+type PatternResponse struct {
+	Pattern  string
+	Response string
+}
+
 type MockLLM struct {
-	mu        sync.RWMutex
-	responses map[string]string
+	mu       sync.RWMutex
+	patterns []PatternResponse
 }
 
 func NewMockLLM(responses map[string]string) *MockLLM {
+	patterns := make([]PatternResponse, 0, len(responses))
+	for pattern, resp := range responses {
+		patterns = append(patterns, PatternResponse{Pattern: pattern, Response: resp})
+	}
 	return &MockLLM{
-		responses: responses,
+		patterns: patterns,
+	}
+}
+
+func NewMockLLMOrdered(patterns []PatternResponse) *MockLLM {
+	return &MockLLM{
+		patterns: patterns,
 	}
 }
 
@@ -36,9 +51,9 @@ func (m *MockLLM) GenerateContent(ctx context.Context, req *model.LLMRequest, st
 		}
 
 		responseText := inputText
-		for pattern, resp := range m.responses {
-			if strings.Contains(inputText, pattern) {
-				responseText = resp
+		for _, pr := range m.patterns {
+			if strings.Contains(inputText, pr.Pattern) {
+				responseText = pr.Response
 				break
 			}
 		}
