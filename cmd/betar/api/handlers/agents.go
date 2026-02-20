@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 
 	"github.com/asabya/betar/internal/agent"
@@ -18,6 +19,8 @@ func RegisterAgentHandlers(r *mux.Router, agentMgr *agent.Manager, listingSvc *m
 	r.HandleFunc("/agents/local", h.listLocalAgents).Methods("GET")
 	r.HandleFunc("/agents", h.registerAgent).Methods("POST")
 	r.HandleFunc("/agents/{id}/execute", h.executeAgent).Methods("POST")
+	r.HandleFunc("/agents/{id}/reputation", h.getReputation).Methods("GET")
+	r.HandleFunc("/agents/{id}/validations", h.getValidations).Methods("GET")
 }
 
 type agentHandler struct {
@@ -91,4 +94,76 @@ func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"output": output})
+}
+
+// getReputation returns ERC-8004 on-chain reputation summary for an agent.
+// The {id} path variable must be the decimal on-chain agentId (TokenID).
+func (h *agentHandler) getReputation(w http.ResponseWriter, r *http.Request) {
+	if h.agentMgr == nil {
+		http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	eip := h.agentMgr.EIP8004Client()
+	if eip == nil {
+		http.Error(w, "EIP-8004 not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	vars := mux.Vars(r)
+	tokenID, ok := new(big.Int).SetString(vars["id"], 10)
+	if !ok {
+		http.Error(w, "invalid agentId", http.StatusBadRequest)
+		return
+	}
+
+	count, summaryValue, decimals, err := eip.GetReputationSummary(r.Context(), tokenID, "", "")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("reputation query failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"agentId":      tokenID.String(),
+		"count":        count,
+		"summaryValue": summaryValue,
+		"decimals":     decimals,
+	})
+}
+
+// getValidations returns ERC-8004 on-chain validation hashes for an agent.
+// The {id} path variable must be the decimal on-chain agentId (TokenID).
+func (h *agentHandler) getValidations(w http.ResponseWriter, r *http.Request) {
+	if h.agentMgr == nil {
+		http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	eip := h.agentMgr.EIP8004Client()
+	if eip == nil {
+		http.Error(w, "EIP-8004 not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	vars := mux.Vars(r)
+	tokenID, ok := new(big.Int).SetString(vars["id"], 10)
+	if !ok {
+		http.Error(w, "invalid agentId", http.StatusBadRequest)
+		return
+	}
+
+	hashes, err := eip.GetAgentValidations(r.Context(), tokenID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("validations query failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert [][32]byte to hex strings for JSON readability.
+	hexHashes := make([]string, len(hashes))
+	for i, h := range hashes {
+		hexHashes[i] = fmt.Sprintf("0x%x", h)
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"agentId":     tokenID.String(),
+		"validations": hexHashes,
+	})
 }

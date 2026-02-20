@@ -13,11 +13,13 @@ import (
 	"github.com/asabya/betar/cmd/betar/api"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
+	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/eth"
 	"github.com/asabya/betar/internal/ipfs"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/pkg/types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
 )
 
@@ -235,6 +237,10 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	if listingService != nil {
+		serveTokenID := ""
+		if registered.TokenID != nil {
+			serveTokenID = registered.TokenID.String()
+		}
 		listingService.UpsertLocalListing(&types.AgentListingMessage{
 			Type:      "list",
 			AgentID:   registered.ID,
@@ -245,6 +251,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 			Addrs:     p2pHost.AddrStrings(),
 			Protocols: []string{p2p.X402ProtocolID},
 			Timestamp: time.Now().Unix(),
+			TokenID:   serveTokenID,
 		})
 	}
 
@@ -393,11 +400,28 @@ func initRuntime(cmd *cobra.Command) error {
 		}
 	}
 
+	// Initialise EIP-8004 client (gracefully optional).
+	var eip8004Client *eip8004.Client
+	if cfg.Ethereum != nil && (cfg.Ethereum.IdentityAddr != "" || cfg.Ethereum.ReputationAddr != "") {
+		eip8004Client, err = eip8004.NewClient(ctx,
+			cfg.Ethereum.RPCURL,
+			cfg.Ethereum.PrivateKey,
+			common.HexToAddress(cfg.Ethereum.IdentityAddr),
+			common.HexToAddress(cfg.Ethereum.ReputationAddr),
+			common.HexToAddress(cfg.Ethereum.ValidationAddr),
+			cfg.Ethereum.ChainID,
+		)
+		if err != nil {
+			fmt.Printf("Warning: EIP-8004 client init failed (continuing without on-chain registry): %v\n", err)
+			eip8004Client = nil
+		}
+	}
+
 	agentManager, err = agent.NewManager(agent.ADKConfig{
 		AppName:   "betar",
 		ModelName: cfg.Agent.Model,
 		APIKey:    cfg.Agent.APIKey,
-	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr)
+	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr, eip8004Client)
 	if err != nil {
 		return fmt.Errorf("failed to create agent manager: %w", err)
 	}
@@ -460,6 +484,11 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 
 	protocols := []string{p2p.X402ProtocolID}
 
+	tokenIDStr := ""
+	if registered.TokenID != nil {
+		tokenIDStr = registered.TokenID.String()
+	}
+
 	listing := &types.AgentListingMessage{
 		Type:      "list",
 		AgentID:   registered.ID,
@@ -470,6 +499,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		Addrs:     p2pHost.AddrStrings(),
 		Protocols: protocols,
 		Timestamp: time.Now().Unix(),
+		TokenID:   tokenIDStr,
 	}
 
 	return registered, listing, nil

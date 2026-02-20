@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/ipfs"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
@@ -26,9 +27,10 @@ type Manager struct {
 	ipfsClient        *ipfs.Client
 	p2pHost           *p2p.Host
 	x402StreamHandler *p2p.X402StreamHandler
-	listingService     *marketplace.AgentListingService
-	paymentService     *marketplace.PaymentService
-	walletAddress      string
+	listingService    *marketplace.AgentListingService
+	paymentService    *marketplace.PaymentService
+	walletAddress     string
+	eip8004           *eip8004.Client
 
 	mu          sync.RWMutex
 	localAgents map[string]*LocalAgent
@@ -42,13 +44,14 @@ type LocalAgent struct {
 	Endpoint    string
 	Price       float64
 	MetadataCID string
-	AgentID     string // ADK runtime agent ID
+	AgentID     string   // ADK runtime agent ID
+	TokenID     *big.Int // ERC-8004 on-chain agentId (nil if not registered)
 	Status      string
 	CreatedAt   time.Time
 }
 
 // NewManager creates a new agent manager
-func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, privKey crypto.PrivKey, paymentSvc *marketplace.PaymentService, walletAddr string) (*Manager, error) {
+func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, privKey crypto.PrivKey, paymentSvc *marketplace.PaymentService, walletAddr string, eip8004Client *eip8004.Client) (*Manager, error) {
 	if ipfsClient == nil {
 		return nil, fmt.Errorf("ipfs client is required")
 	}
@@ -70,6 +73,7 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 		listingService: listingService,
 		paymentService: paymentSvc,
 		walletAddress:  walletAddr,
+		eip8004:        eip8004Client,
 		localAgents:    make(map[string]*LocalAgent),
 	}
 
@@ -105,6 +109,18 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		return nil, fmt.Errorf("failed to pin metadata: %w", err)
 	}
 
+	// Register identity on-chain (best-effort; does not block marketplace flow).
+	var tokenID *big.Int
+	if m.eip8004 != nil {
+		id, err := m.eip8004.RegisterIdentity(ctx, "ipfs://"+metadataCID)
+		if err != nil {
+			fmt.Printf("[RegisterAgent] EIP-8004 RegisterIdentity failed (continuing): %v\n", err)
+		} else if id != nil {
+			tokenID = id
+			fmt.Printf("[RegisterAgent] EIP-8004 registered agentId=%s\n", id)
+		}
+	}
+
 	// Create local agent
 	agent := &LocalAgent{
 		ID:          m.p2pHost.ID().String() + "/" + runtimeAgentID,
@@ -114,6 +130,7 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		Price:       spec.Price,
 		MetadataCID: metadataCID,
 		AgentID:     runtimeAgentID,
+		TokenID:     tokenID,
 		Status:      "active",
 		CreatedAt:   time.Now(),
 	}
@@ -657,7 +674,11 @@ func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID
 
 		switch respType2 {
 		case marketplace.MsgTypeX402Response:
-			return extractX402Output(respData2)
+			output, execErr := extractX402Output(respData2)
+			if execErr == nil {
+				m.submitFeedbackAsync(agentID)
+			}
+			return output, execErr
 		case marketplace.MsgTypeX402Error:
 			return extractX402ErrorMessage(respData2)
 		default:
@@ -786,4 +807,32 @@ type AgentSpec struct {
 // ConnectToAgent connects to a remote agent via P2P
 func (m *Manager) ConnectToAgent(ctx context.Context, peerID peer.ID) error {
 	return m.p2pHost.Connect(ctx, peer.AddrInfo{ID: peerID})
+}
+
+// EIP8004Client returns the underlying EIP-8004 client (may be nil).
+func (m *Manager) EIP8004Client() *eip8004.Client {
+	return m.eip8004
+}
+
+// submitFeedbackAsync looks up the listing's TokenID and submits a successful
+// execution feedback signal in a background goroutine. Errors are best-effort.
+func (m *Manager) submitFeedbackAsync(agentID string) {
+	if m.eip8004 == nil || m.listingService == nil {
+		return
+	}
+	listing, _ := m.listingService.GetListing(agentID)
+	if listing == nil || listing.TokenID == "" {
+		return
+	}
+	tokenIDStr := listing.TokenID
+	go func() {
+		tokenID, ok := new(big.Int).SetString(tokenIDStr, 10)
+		if !ok {
+			return
+		}
+		if err := m.eip8004.GiveFeedback(context.Background(), tokenID,
+			100, 0, "execution", "", "", "", [32]byte{}); err != nil {
+			fmt.Printf("[submitFeedbackAsync] GiveFeedback warn: %v\n", err)
+		}
+	}()
 }

@@ -42,10 +42,12 @@ type IPFSConfig struct {
 
 // EthereumConfig holds Ethereum configuration
 type EthereumConfig struct {
-	RPCURL       string
-	PrivateKey   string
-	ChainID      int64
-	RegistryAddr string
+	RPCURL         string
+	PrivateKey     string
+	ChainID        int64
+	IdentityAddr   string // ERC-8004 IdentityRegistry on Base Sepolia
+	ReputationAddr string // ERC-8004 ReputationRegistry on Base Sepolia
+	ValidationAddr string // ERC-8004 ValidationRegistry (may be empty)
 }
 
 // AgentConfig holds agent configuration
@@ -77,9 +79,12 @@ func LoadConfig() (*Config, error) {
 			APIURL: getEnv("IPFS_API_URL", "http://localhost:5001"),
 		},
 		Ethereum: &EthereumConfig{
-			RPCURL:     getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
-			PrivateKey: getEnv("ETHEREUM_PRIVATE_KEY", ""),
-			ChainID:    84532, // Base Sepolia
+			RPCURL:         getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
+			PrivateKey:     getEnv("ETHEREUM_PRIVATE_KEY", ""),
+			ChainID:        84532, // Base Sepolia
+			IdentityAddr:   getEnv("ERC8004_IDENTITY_ADDR", "0x8004A818BFB912233c491871b3d84c89A494BD9e"),
+			ReputationAddr: getEnv("ERC8004_REPUTATION_ADDR", "0x8004B663056A597Dffe9eCcC1965A193B7388713"),
+			ValidationAddr: getEnv("ERC8004_VALIDATION_ADDR", ""),
 		},
 		Agent: &AgentConfig{
 			Model:  getEnv("GOOGLE_MODEL", "gemini-2.5-flash"),

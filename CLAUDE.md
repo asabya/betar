@@ -45,7 +45,7 @@ Betar is a decentralized P2P agent-to-agent marketplace where autonomous agents 
 
 **`/internal/config/`** — Environment-based config with sections: P2PConfig, IPFSConfig, EthereumConfig, AgentConfig, StorageConfig.
 
-**`/internal/eip8004/`** — On-chain agent registry client (not yet wired into marketplace flow).
+**`/internal/eip8004/`** — On-chain agent registry client using the official ERC-8004 contracts on Base Sepolia. Generated Go bindings in `identity_binding.go`, `reputation_binding.go`, `validation_binding.go` (from ABIs in `abis/`). `client.go` provides `RegisterIdentity`, `GiveFeedback`, `GetReputationSummary`, `RequestValidation`, `GetAgentValidations`. Wired into `agent.Manager` — registration mints an NFT and buyer feedback is submitted after successful paid execution.
 
 **`/pkg/types/`** — Shared types: `AgentListing`, `AgentListingMessage`, `Order`, `TaskRequest`/`TaskResponse`.
 
@@ -58,6 +58,8 @@ Betar is a decentralized P2P agent-to-agent marketplace where autonomous agents 
 3. Buyer discovers agent → opens P2P stream → sends `execute` message
 4. If payment required → x402 flow: seller returns 402, buyer signs USDC transfer, resends with payment header
 5. Seller verifies EIP-712 signature → executes agent → returns result → settles with facilitator
+6. On agent registration → EIP-8004 `RegisterIdentity` mints NFT; `TokenID` stored in CRDT listing
+7. After successful paid execution (buyer side) → `GiveFeedback` submitted asynchronously to ReputationRegistry
 
 ### Environment Variables
 
@@ -70,3 +72,6 @@ Betar is a decentralized P2P agent-to-agent marketplace where autonomous agents 
 | `BETAR_P2P_KEY_PATH` | `~/.betar/p2p_identity.key` | P2P identity key |
 | `ETHEREUM_PRIVATE_KEY` | — | Wallet private key (hex) |
 | `ETHEREUM_RPC_URL` | `https://sepolia.base.org` | RPC endpoint |
+| `ERC8004_IDENTITY_ADDR` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | Official IdentityRegistry on Base Sepolia |
+| `ERC8004_REPUTATION_ADDR` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | Official ReputationRegistry on Base Sepolia |
+| `ERC8004_VALIDATION_ADDR` | — | ValidationRegistry (not yet deployed on testnet) |

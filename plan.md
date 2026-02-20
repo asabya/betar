@@ -52,11 +52,11 @@ Building a decentralized P2P marketplace where AI agents can discover, list, and
 | HTTP API Server | `cmd/betar/api/server.go` | gorilla/mux |
 | CLI Commands | `cmd/betar/main.go` | start, node, agent, order, wallet |
 
-### ❌ Not Started
+### ✅ Recently Completed
 
-| Component | Notes |
-|-----------|-------|
-| EIP-8004 On-chain Registration | Contracts exist but not wired to marketplace |
+| Component | File | Notes |
+|-----------|------|-------|
+| EIP-8004 On-chain Registration | `internal/eip8004/` | Official deployed contracts on Base Sepolia; Go bindings generated via abigen |
 
 ---
 
@@ -100,7 +100,11 @@ betar/
 │   ├── eth/
 │   │   └── wallet.go           # Ethereum wallet
 │   └── eip8004/
-│       └── client.go           # On-chain registration (STUB)
+│       ├── client.go           # On-chain registration (real — RegisterIdentity, GiveFeedback, etc.)
+│       ├── identity_binding.go # abigen-generated binding for IdentityRegistry
+│       ├── reputation_binding.go # abigen-generated binding for ReputationRegistry
+│       ├── validation_binding.go # abigen-generated binding for ValidationRegistry
+│       └── abis/               # Official ABI files from erc-8004/erc-8004-contracts
 ├── pkg/
 │   └── types/
 │       └── types.go            # Shared types
@@ -145,7 +149,7 @@ Buyer                              Seller
 
 ## Implementation Plan
 
-All planned components are complete. See `KNOWLEDGE_BASE.md` for detailed technical documentation.
+All planned components are complete, including EIP-8004 on-chain integration. See `KNOWLEDGE_BASE.md` for detailed technical documentation.
 
 ---
 
@@ -202,7 +206,7 @@ Environment variables:
 - [x] Smart Contracts: Deploy to testnet (done manually)
 - [x] Marketplace Messaging: Publish agent listing, receive on other peers
 - [x] Payment Flow: Execute task with x402 payment
-- [ ] EIP-8004: On-chain agent registration (NOT STARTED)
+- [x] EIP-8004: On-chain agent registration (COMPLETE — official contracts on Base Sepolia)
 
 ---
 
