@@ -54,6 +54,8 @@ Every message in both directions uses the same binary frame format:
 
 Both the request **and** the response use this framing, which means a single stream handler can write back a `x402.payment_required` frame OR a `x402.response` frame and the caller decodes the type first.
 
+**Stream lifecycle:** Each stream MUST carry exactly one request frame (client → server) and exactly one response frame (server → client). The server MUST close the stream after writing the response. For the standard 2-trip flow, the client opens two separate streams — one for `x402.request` / `x402.payment_required` and one for `x402.paid_request` / `x402.response`.
+
 ---
 
 ## 4. Message Types
@@ -70,9 +72,11 @@ Both the request **and** the response use this framing, which means a single str
 
 ## 5. Message Schemas
 
-All `body` fields carry opaque application payload encoded as a JSON byte array (i.e., the raw JSON-marshalled bytes of an application-level object).
+All `body` fields carry opaque application payload. The value MUST be the JSON encoding of the raw application bytes, which renders as a **base64-encoded string** in the JSON wire format (standard Go `[]byte` → JSON marshalling). The server MUST reject a `body` that is not valid base64 or whose decoded content is not valid JSON with `INVALID_MESSAGE (1000)`.
 
 ### 5.1 `x402.request`
+
+> `correlation_id` MUST be a UUID v4 string. The server MUST reject a request whose `correlation_id` is empty or not a valid UUID v4 with `INVALID_MESSAGE (1000)`.
 
 ```jsonc
 {
@@ -181,6 +185,8 @@ All `body` fields carry opaque application payload encoded as a JSON byte array 
 
 ## 7. Protocol Flows
 
+> **Settlement invariant:** The server MUST complete facilitator settlement before invoking resource execution. If settlement succeeds but execution fails, the server MUST return `EXECUTION_FAILED (3000)`. The server MUST NOT attempt resource execution if settlement fails.
+
 ### 7.1 Standard 2-Trip Flow (unknown price)
 
 ```
@@ -243,6 +249,18 @@ The `challenge_nonce` serves a dual role:
 
 **Preemptive nonce security:** When `server_nonce = "preemptive"`, the server performs standard EIP-712 signature verification (which checks timestamp validity and recovers the signer address), and the on-chain USDC nonce replay protection ensures the same signed payload cannot be reused.
 
+**Validation order (standard flow):** Before attempting settlement, the server MUST verify in order:
+1. The challenge nonce has not expired (`challenge_expires_at`).
+2. `authorization.valid_after` ≤ current time ≤ `authorization.valid_before`.
+3. The `authorization.nonce` matches the stored challenge nonce.
+
+All three checks MUST pass or the server MUST return the appropriate error without calling the facilitator.
+
+**Preemptive nonce rules:** When `server_nonce = "preemptive"`:
+- The `authorization.nonce` MUST be globally unique (never previously used).
+- The server MUST mark the nonce consumed **before** calling the facilitator.
+- The nonce MUST NOT be reused even if settlement subsequently fails.
+
 ---
 
 ## 9. Design Rationale
@@ -253,14 +271,6 @@ This specification uses JSON because:
 - The existing x402 Go and TypeScript libraries use JSON for `EVMPayload`.
 - Interoperability with the HTTP x402 ecosystem is easier with a shared serialization format.
 - The payload sizes (< 1 KB for most messages) make the overhead negligible.
-
-### Why a new protocol ID?
-
-The existing betar marketplace protocol (`/betar/marketplace/1.0.0`) embeds payment inside application-level JSON bodies with untyped responses. The new protocol ID `/x402/libp2p/1.0.0` signals support for the proper envelope layer and is intended to be implemented by any peer regardless of the application-level service.
-
-### Backwards compatibility
-
-The old `/betar/marketplace/1.0.0` protocol is left completely unchanged. Agents that advertise both protocol IDs in their CRDT listing support both payment flows.
 
 ---
 
