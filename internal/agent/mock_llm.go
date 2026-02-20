@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"iter"
+	"sort"
 	"strings"
 	"sync"
 
@@ -25,6 +26,9 @@ func NewMockLLM(responses map[string]string) *MockLLM {
 	for pattern, resp := range responses {
 		patterns = append(patterns, PatternResponse{Pattern: pattern, Response: resp})
 	}
+	sort.Slice(patterns, func(i, j int) bool {
+		return patterns[i].Pattern < patterns[j].Pattern
+	})
 	return &MockLLM{
 		patterns: patterns,
 	}

@@ -152,3 +152,29 @@ func TestMockLLM_ConcurrentAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestMockLLMOrdered_PatternOrderMatters(t *testing.T) {
+	patterns := []PatternResponse{
+		{Pattern: "error handler", Response: "handler response"},
+		{Pattern: "error", Response: "error response"},
+	}
+	llm := NewMockLLMOrdered(patterns)
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			genai.NewContentFromText("error handler test", genai.RoleUser),
+		},
+	}
+
+	var gotResponse *model.LLMResponse
+	for resp, err := range llm.GenerateContent(context.Background(), req, false) {
+		if err != nil {
+			t.Fatalf("GenerateContent failed: %v", err)
+		}
+		gotResponse = resp
+	}
+
+	if gotResponse.Content.Parts[0].Text != "handler response" {
+		t.Errorf("expected 'handler response' (first pattern wins), got %q", gotResponse.Content.Parts[0].Text)
+	}
+}
