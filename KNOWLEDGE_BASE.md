@@ -1,17 +1,41 @@
 # Betar Knowledge Base
 
-This document contains research findings for building a P2P Agent-to-Agent marketplace.
+This document contains research findings and implementation status for building a P2P Agent-to-Agent marketplace.
 
 ---
 
 ## Table of Contents
 
-1. [libp2p - P2P Networking](#libp2p---p2p-networking)
-2. [Google ADK (Go) - Agent Framework](#google-adk-go---agent-framework)
-3. [EIP-8004 - Agent Registration](#eip-8004---agent-registration)
-4. [IPFS - Distributed Storage](#ipfs---distributed-storage)
-5. [Marketplace CRDT - go-ds-crdt](#marketplace-crdt---go-ds-crdt)
-6. [EIP-402 - Payments](#eip-402---payments)
+1. [Implementation Status](#implementation-status)
+2. [libp2p - P2P Networking](#libp2p---p2p-networking)
+3. [Google ADK (Go) - Agent Framework](#google-adk-go---agent-framework)
+4. [EIP-8004 - Agent Registration](#eip-8004---agent-registration)
+5. [IPFS - Distributed Storage](#ipfs---distributed-storage)
+6. [Marketplace CRDT - go-ds-crdt](#marketplace-crdt---go-ds-crdt)
+7. [EIP-402 / x402 Payments](#eip-402--x402-payments)
+8. [Architecture Summary](#architecture-summary)
+
+---
+
+## Implementation Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| P2P Infrastructure | ✅ Done | host, mDNS, DHT, pubsub, streams |
+| IPFS Integration | ✅ Done | embedded ipfs-lite |
+| Agent Manager | ✅ Done | ADK Go runtime |
+| Marketplace CRDT | ✅ Done | listing state via go-ds-crdt |
+| Order Management | ✅ Done | order service |
+| x402 Payments | ✅ Done | payment flow implemented |
+| Wallet/ETH | ✅ Done | ERC20 transfers |
+| Smart Contracts | ✅ Done | AgentRegistry, ReputationRegistry, ValidationRegistry, PaymentVault |
+| HTTP API Server | ✅ Done | gorilla/mux |
+| EIP-8004 Client | ❌ Missing | on-chain registration not integrated |
+
+### Known Gaps
+
+1. **EIP-8004 Client**: On-chain agent registration not wired to marketplace
+2. **Documentation**: This file needs to be updated as implementation evolves
 
 ---
 
@@ -19,268 +43,80 @@ This document contains research findings for building a P2P Agent-to-Agent marke
 
 **Repository:** https://github.com/libp2p/go-libp2p
 
-### Basic Host Creation
+### Implementation: `internal/p2p/`
+
+| File | Purpose |
+|------|---------|
+| `host.go` | libp2p host creation with TCP/QUIC transports |
+| `discovery.go` | mDNS (local) + DHT (network) peer discovery |
+| `pubsub.go` | GossipSub for CRDT replication |
+| `stream.go` | Direct P2P streams for agent execution |
+
+### Key Code Patterns
+
+#### Host Creation
 
 ```go
-import (
-    "context"
-    "github.com/libp2p/go-libp2p"
-)
-
-func main() {
-    host, err := libp2p.New()
-    if err != nil {
-        panic(err)
-    }
-    defer host.Close()
-
-    fmt.Println("Peer ID:", host.ID())
-    fmt.Println("Listen addresses:", host.Addrs())
-}
+// internal/p2p/host.go
+host, err := p2p.NewHost(ctx, cfg.P2P)
 ```
 
-### Customized Host Configuration
+#### PubSub
 
 ```go
-import (
-    "crypto/rand"
-    "github.com/libp2p/go-libp2p"
-    "github.com/libp2p/go-libp2p/crypto"
-    "github.com/libp2p/go-libp2p/p2p/transport/tcp"
-    "github.com/libp2p/go-libp2p/p2p/muxer/yamux"
-    "github.com/libp2p/go-libp2p/p2p/security/noise"
-    "github.com/libp2p/go-libp2p/p2p/security/tls"
-)
-
-func createCustomHost(listenPort int) (host.Host, error) {
-    privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
-    if err != nil {
-        return nil, err
-    }
-
-    node, err := libp2p.New(
-        libp2p.Identity(privKey),
-        libp2p.ListenAddrStrings(
-            fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", listenPort),
-            fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", listenPort),
-        ),
-        libp2p.Transport(tcp.NewTCPTransport),
-        libp2p.Muxer("/yamux/1.0.0", yamux.DefaultConfig),
-        libp2p.Security(noise.ID, noise.New),
-        libp2p.Security(tls.ID, tls.New),
-        libp2p.NATPortMap(),
-        libp2p.EnableRelay(),
-        libp2p.EnableHolePunching(),
-    )
-
-    return node, err
-}
+// internal/p2p/pubsub.go
+ps, err := p2p.NewPubSub(ctx, host.RawHost())
 ```
 
-### Key Configuration Options
-
-| Option | Description |
-|--------|-------------|
-| `Identity(sk)` | Set peer identity |
-| `ListenAddrStrings(s...)` | Configure listen addresses |
-| `Transport(constructor)` | Add custom transport (TCP, QUIC, WebSocket, WebRTC) |
-| `Muxer(name, config)` | Add stream multiplexer (yamux, mplex) |
-| `Security(name, constructor)` | Add security transport (TLS, Noise) |
-| `NATPortMap()` | Enable UPnP port mapping |
-| `EnableRelay()` | Enable circuit relay transport |
-| `EnableHolePunching()` | Enable NAT traversal |
-
-### Peer Discovery
-
-#### mDNS (Local Network Discovery)
+#### Stream Protocol (`/betar/marketplace/1.0.0`)
 
 ```go
-import (
-    "github.com/libp2p/go-libp2p/p2p/discovery/mdns"
-)
+// Sending via stream (buyer side)
+resp, err := streamHandler.SendMessage(ctx, peerID, "execute", reqData)
 
-func setupMdnsDiscovery(ctx context.Context, h host.Host, serviceName string) error {
-    mdnsService := mdns.NewMdnsService(h, serviceName)
-    if err := mdnsService.Start(); err != nil {
-        return err
-    }
-
-    peerChan := make(chan *peer.AddrInfo, 10)
-    mdnsService.RegisterNotifee(peerChan)
-
-    go func() {
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case addrInfo := <-peerChan:
-                h.Peerstore().AddAddrs(addrInfo.ID, addrInfo.Addrs, peerstore.PermanentAddrTTL)
-                h.Connect(ctx, *addrInfo)
-            }
-        }
-    }()
-
-    return nil
-}
-```
-
-#### DHT (Decentralized Discovery)
-
-```go
-import (
-    "github.com/libp2p/go-libp2p/p2p/discovery/routing"
-    "github.com/libp2p/go-libp2p-kad-dht"
-)
-
-func setupDHT(ctx context.Context, h host.Host) (*dht.IpfsDHT, error) {
-    kademliaDHT := dht.NewDHT(ctx, h, dht.Mode(dht.ServerMode))
-
-    // Bootstrap with known peers
-    bootstrapPeers := []string{
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zp5i9cM2m2E1r4NkHeF7NhU9gBbz3K",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ2wBb1jzYp5VCxQGtEex9kK",
-    }
-
-    for _, addr := range bootstrapPeers {
-        pi, _ := peer.AddrInfoFromString(addr)
-        h.Peerstore().AddAddrs(pi.ID, pi.Addrs, peerstore.PermanentAddrTTL)
-        h.Connect(ctx, *pi)
-    }
-
-    return kademliaDHT, nil
-}
-```
-
-### PubSub (GossipSub)
-
-```go
-import (
-    "github.com/libp2p/go-libp2p/pubsub"
-    "github.com/libp2p/go-libp2p/pubsub/gossipsub"
-)
-
-func setupPubSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
-    gs := gossipsub.NewGossipSub(
-        ctx,
-        h,
-        gossipsub.WithMessageSigning(true),
-        gossipsub.WithStrictSignatureVerification(true),
-    )
-    return gs, nil
-}
-
-// Publishing messages
-func publishOrder(ctx context.Context, ps *pubsub.PubSub, topicStr string, data []byte) error {
-    topic, err := ps.Join(topicStr)
-    if err != nil {
-        return err
-    }
-    return topic.Publish(ctx, data)
-}
-
-// Subscribing to messages
-func subscribeToOrders(ctx context.Context, ps *pubsub.PubSub, topicStr string) (*pubsub.Subscription, error) {
-    topic, err := ps.Join(topicStr)
-    if err != nil {
-        return nil, err
-    }
-    return topic.Subscribe()
-}
-```
-
-### Recommended Dependencies
-
-```
-github.com/libp2p/go-libp2p v0.45.0
-github.com/libp2p/go-libp2p-kad-dht v0.25.0
-github.com/libp2p/go-libp2p-pubsub v0.11.0
-github.com/libp2p/go-libp2p-noise v0.5.0
-github.com/libp2p/go-libp2p-tls v0.5.0
+// Receiving (seller side)
+streamHandler.RegisterHandler("execute", m.handleExecuteRequest)
 ```
 
 ---
 
 ## Google ADK (Go) - Agent Framework
 
-**Module:** https://pkg.go.dev/google.golang.org/adk@v0.4.0  
-**Repository:** https://github.com/google/adk-go
+**Module:** `google.golang.org/adk@v0.4.0`
 
-### Important Finding
+### Implementation: `internal/agent/`
 
-`google.golang.org/adk@v0.4.0` provides a **native Go agent framework**, so we can remove the Python sidecar and run agents in the same Go process as the marketplace node.
+| File | Purpose |
+|------|---------|
+| `adk.go` | ADK runtime wrapper |
+| `manager.go` | Agent lifecycle + P2P execution |
+| `worker.go` | Legacy pubsub worker (not used) |
 
-Benefits for this project:
-1. No cross-language HTTP bridge for local execution paths
-2. Lower overhead for task dispatch (pubsub message -> Go handler -> ADK run)
-3. Better token hygiene: keep prompts small, structured, and event-driven from pubsub payloads
-
-### Core ADK Packages (v0.4.0)
-
-| Package | Purpose |
-|--------|---------|
-| `agent/llmagent` | Build LLM-backed agents |
-| `model/gemini` | Gemini model client implementation |
-| `tool/functiontool` | Wrap Go functions as callable tools |
-| `runner` | Runtime for orchestrating agent execution |
-| `server/adka2a`, `server/adkrest` | Expose agents via A2A/REST when needed |
-
-### Agent Creation (Go)
+### Agent Creation
 
 ```go
-import (
-    "context"
-    "os"
-
-    "google.golang.org/genai"
-
-    "google.golang.org/adk/agent/llmagent"
-    "google.golang.org/adk/model/gemini"
-    "google.golang.org/adk/tool"
-    "google.golang.org/adk/tool/geminitool"
-)
-
-func newAgent(ctx context.Context) (*llmagent.Agent, error) {
-    model, err := gemini.NewModel(ctx, "gemini-2.5-flash", &genai.ClientConfig{
-        APIKey: os.Getenv("GOOGLE_API_KEY"),
-    })
-    if err != nil {
-        return nil, err
-    }
-
-    return llmagent.New(llmagent.Config{
-        Name:        "marketplace_agent",
-        Model:       model,
-        Description: "Executes marketplace tasks from p2p queue",
-        Instruction: "Process only marketplace task payloads.",
-        Tools: []tool.Tool{
-            geminitool.GoogleSearch{},
-        },
-    })
+// internal/agent/manager.go
+func NewManager(runtimeCfg ADKConfig, ...) (*Manager, error) {
+    runtime, err := NewADKRuntime(runtimeCfg)
+    // ...
 }
 ```
 
-### Stream-Driven Execution Pattern (Current Runtime)
-
-Betar uses direct libp2p streams for agent execution and order transitions:
-
-1. Discover seller peer via CRDT listing (`SellerID` + `Addrs`)
-2. Connect over libp2p (direct path first, relay-capable fallback)
-3. Send compact execution/order payload over stream protocol
-4. Process response as request/response ACK
-
-### Token Efficiency Practices
-
-- Keep stream payload schema minimal (`task`, `contextRef`, `constraints`)
-- Store large context in IPFS and pass CID pointers, not full text
-- Reuse short system instructions and avoid verbose conversation replay
-- Enforce max input/output tokens per task class
-
-### Recommended Dependency
+### Local Execution
 
 ```go
-google.golang.org/adk v0.4.0
+result, err := m.runtime.RunTask(ctx, types.TaskRequest{
+    AgentID:   agent.AgentID,
+    Input:     input,
+    RequestID: requestID,
+})
+```
+
+### Remote Execution
+
+```go
+// Connect to peer, then send via stream
+resp, err := m.streamHandler.SendMessage(ctx, peerID, "execute", reqData)
 ```
 
 ---
@@ -289,214 +125,171 @@ google.golang.org/adk v0.4.0
 
 **Specification:** https://eips.ethereum.org/EIPS/eip-8004
 
-EIP-8004 defines three lightweight registries for agent discovery and interaction.
+### Smart Contracts: `contracts/src/`
 
-### Agent Identity
+| File | Purpose |
+|------|---------|
+| `AgentRegistry.sol` | ERC-721 based agent identity |
+| `ReputationRegistry.sol` | Feedback system |
+| `ValidationRegistry.sol` | Agent validation |
+| `x402/PaymentVault.sol` | EIP-402 payment vault |
 
-Agents identified by:
-- `agentRegistry`: Format `{namespace}:{chainId}:{identityRegistry}` (e.g., `eip155:1:0x742...`)
-- `agentId`: ERC-721 tokenId assigned incrementally
+### Registration Schema
 
-### Registration File Schema
-
-```json
-{
-  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-  "name": "myAgentName",
-  "description": "Description of the Agent",
-  "image": "https://example.com/agentimage.png",
-  "services": [
-    { "name": "web", "endpoint": "https://web.agentxyz.com/" },
-    { "name": "A2A", "endpoint": "...", "version": "0.3.0" },
-    { "name": "MCP", "endpoint": "...", "version": "2025-06-18" }
-  ],
-  "x402Support": false,
-  "active": true,
-  "registrations": [
-    { "agentId": 22, "agentRegistry": "eip155:1:0x742..." }
-  ],
-  "supportedTrust": ["reputation", "crypto-economic", "tee-attestation"]
+```go
+// pkg/types/types.go
+type AgentRegistration struct {
+    Type        string    `json:"type"`
+    Name        string    `json:"name"`
+    Description string    `json:"description"`
+    Image       string    `json:"image,omitempty"`
+    Services    []Service `json:"services"`
+    X402Support bool      `json:"x402Support"`
+    Active      bool      `json:"active"`
 }
 ```
 
-### Agent URI
+### Status
 
-Supports:
-- `ipfs://{cid}` - IPFS content address
-- `https://example.com/agent.json` - HTTPS
-- `data:application/json;base64,...` - Base64 encoded
-
-### Smart Contract Functions
-
-```solidity
-// AgentRegistry
-function register(string agentURI, MetadataEntry[] calldata metadata) external returns (uint256 agentId)
-function setAgentURI(uint256 agentId, string calldata newURI) external
-function getMetadata(uint256 agentId, string memory metadataKey) external view returns (bytes memory)
-
-// ReputationRegistry
-function giveFeedback(
-    uint256 agentId,
-    int128 value,
-    uint8 valueDecimals,
-    string calldata tag1,
-    string calldata tag2,
-    string calldata endpoint,
-    string calldata feedbackURI,
-    bytes32 feedbackHash
-) external
-```
-
-### Feedback Value Examples
-
-| tag1 | Measurement | Example | value | valueDecimals |
-|------|-------------|---------|-------|---------------|
-| starred | Quality rating (0-100) | 87/100 | 87 | 0 |
-| reachable | Endpoint reachable (binary) | true | 1 | 0 |
-| uptime | Endpoint uptime (%) | 99.77% | 9977 | 2 |
-| successRate | Success rate (%) | 89% | 89 | 0 |
-| responseTime | Response time (ms) | 560ms | 560 | 0 |
+⚠️ **Not Integrated**: On-chain registration via EIP-8004 is not wired to marketplace. The contracts exist but the Go client (`internal/eip8004/`) is a stub.
 
 ---
 
 ## IPFS - Distributed Storage
 
-**Implementation:** https://github.com/hsanjuan/ipfs-lite
+**Implementation:** `github.com/hsanjuan/ipfs-lite`
 
-Betar runs an embedded IPFS-lite peer in-process (no external daemon).
-The IPFS-lite node is wired to the same libp2p host used for marketplace networking.
+### Implementation: `internal/ipfs/client.go`
 
-### Go Integration
+Betar runs embedded IPFS-lite peer in-process (no external daemon).
 
 ```go
-import (
-    "bytes"
-    "io"
+// Creating client
+ipfsClient, err := ipfs.NewClient(ctx, p2pHost.RawHost(), discovery.Routing(), cfg.Storage.DataDir)
 
-    ipfslite "github.com/hsanjuan/ipfs-lite"
-)
+// Adding data
+cid, err := ipfsClient.AddJSON(ctx, data)
 
-func addToIPFS(p *ipfslite.Peer, fileData []byte) (string, error) {
-    node, err := p.AddFile(context.Background(), bytes.NewReader(fileData), nil)
-    if err != nil {
-        return "", err
-    }
-    return node.Cid().String(), nil
-}
+// Retrieving data
+err := ipfsClient.GetJSON(ctx, cid, &result)
 
-func catFromIPFS(p *ipfslite.Peer, cid cid.Cid) ([]byte, error) {
-    r, err := p.GetFile(context.Background(), cid)
-    if err != nil {
-        return nil, err
-    }
-    defer r.Close()
-    return io.ReadAll(r)
-}
+// Pinning
+ipfsClient.Pin(ctx, cid)
 ```
-
-### CRDT DAG Sync
-
-For `go-ds-crdt`, replicas need an IPLD `DAGService`. Betar passes IPFS-lite's `DAGService` directly into `crdt.New(...)`.
-This allows CRDT state exchange over pubsub while persisting/fetching DAG blocks through the embedded node.
 
 ---
 
 ## Marketplace CRDT - go-ds-crdt
 
-**Repository:** https://github.com/ipfs/go-ds-crdt
+**Implementation:** `internal/marketplace/crdt.go`
 
-`go-ds-crdt` provides a Merkle-CRDT datastore. Betar uses it as the marketplace listing state layer:
+### Topic: `betar/marketplace/crdt`
 
-- Topic for CRDT head gossip: `betar/marketplace/crdt`
-- Transport: libp2p GossipSub broadcaster (`NewPubSubBroadcaster`)
-- Persistence model: key-value entries under `/marketplace/agents/...`
-- Value payload: serialized `AgentListing`
+```go
+// internal/marketplace/crdt.go
+const CRDTTopic = "betar/marketplace/crdt"
+```
 
-### Why this model
+### Usage
 
-1. Convergent replicated listings without a central coordinator
-2. Eventual consistency across peers even with intermittent connectivity
-3. Native IPLD DAG history that can be repaired/replayed by CRDT datastore
-
-### Implementation notes in Betar
-
-- CRDT datastore is created with `crdt.New(...)`
-- Broadcaster is created from existing libp2p pubsub
-- DAG operations are served by embedded IPFS-lite (`ipld.DAGService`)
-- CLI `betar start` continuously updates local agent listing entries; CRDT pubsub subscription is owned by `NewPubSubBroadcaster`
-- Agent execution and order lifecycle are not app-level pubsub topics; they run on direct libp2p streams.
+```go
+listingService, err := marketplace.NewAgentListingService(ctx, ipfsClient, p2pPubSub, p2pHost.ID())
+listingService.UpsertLocalListing(&types.AgentListingMessage{...})
+listingService.UpdateListing(ctx, listing)
+listings := listingService.ListListings()
+```
 
 ---
 
-## EIP-402 - Payments
+## EIP-402 / x402 Payments
 
-EIP-402 defines a payment standard for agent services, often implemented as a Payment Vault.
+**Implementation:** `internal/marketplace/payment.go`, `internal/marketplace/x402.go`
 
-### Basic Payment Flow
+**Library:** `github.com/mark3labs/x402-go/v2`
 
-1. Buyer deposits funds into Payment Vault
-2. Buyer requests service from agent
-3. Agent verifies payment and provides service
-4. Funds released to agent wallet upon completion
+### Networks & Tokens
 
-### Example Payment Contract Structure
+```go
+const NetworkBaseSepolia = "eip155:84532"
+const NetworkBaseMainnet  = "eip155:8453"
 
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+const USDCBaseSepolia = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+const USDCBaseMainnet  = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+```
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+### Key Types
 
-contract PaymentVault {
-    mapping(address => uint256) public balances;
-    mapping(bytes32 => PaymentRequest) public paymentRequests;
+```go
+// PaymentHeader — embedded in P2P execute messages
+type PaymentHeader struct {
+    Requirement PaymentRequirements  `json:"requirement"`
+    Payer       string               `json:"payer"`
+    PaymentID   string               `json:"payment_id"`
+    Signature   string               `json:"signature,omitempty"`
+    Accepted    *PaymentRequirements `json:"accepted,omitempty"`
+    Payload     *EVMPayload          `json:"payload,omitempty"`
+}
 
-    struct PaymentRequest {
-        address buyer;
-        address seller;
-        uint256 amount;
-        bool released;
-    }
+// TaskExecuteRequest — sent from buyer to seller over P2P stream
+type TaskExecuteRequest struct {
+    AgentID         string         `json:"agent_id"`
+    Input           string         `json:"input"`
+    PaymentHeader   *PaymentHeader `json:"payment_header,omitempty"`
+    TransactionHash string         `json:"transaction_hash,omitempty"`
+}
 
-    event Deposit(address indexed user, uint256 amount);
-    event PaymentRequested(bytes32 indexed requestId, address buyer, address seller, uint256 amount);
-    event PaymentReleased(bytes32 indexed requestId, uint256 amount);
-
-    function deposit(uint256 amount) external {
-        require(IERC20(token).transferFrom(msg.sender, address(this), amount));
-        balances[msg.sender] += amount;
-        emit Deposit(msg.sender, amount);
-    }
-
-    function requestPayment(
-        address seller,
-        uint256 amount
-    ) external returns (bytes32 requestId) {
-        require(balances[msg.sender] >= amount, "Insufficient balance");
-        balances[msg.sender] -= amount;
-
-        requestId = keccak256(abi.encodePacked(msg.sender, seller, amount, block.timestamp));
-        paymentRequests[requestId] = PaymentRequest({
-            buyer: msg.sender,
-            seller: seller,
-            amount: amount,
-            released: false
-        });
-
-        emit PaymentRequested(requestId, msg.sender, seller, amount);
-    }
-
-    function releasePayment(bytes32 requestId) external {
-        PaymentRequest storage req = paymentRequests[requestId];
-        require(!req.released, "Already released");
-
-        req.released = true;
-        balances[req.seller] += req.amount;
-
-        emit PaymentReleased(requestId, req.amount);
-    }
+// PaymentRequiredResponse — returned by seller when payment is required
+type PaymentRequiredResponse struct {
+    AgentID            string               `json:"agent_id"`
+    RequestID          string               `json:"request_id"`
+    Message            string               `json:"message"`
+    PaymentRequirement *PaymentRequirements `json:"payment_requirement,omitempty"`
+    RequiresPayment    bool                 `json:"requires_payment"`
 }
 ```
+
+### Implemented Payment Flow
+
+```
+Buyer                              Seller
+  │                                   │
+  │── Execute Request ───────────────►│ {agentId, input, paymentHeader?}
+  │                                   │──► Check: agent requires payment?
+  │                                   │──► No payment header → return 402
+  │                                   │
+  │◄── PaymentRequired ───────────────│ {requires_payment: true, payment_requirement}
+  │                                   │
+  │  Buyer signs EIP-712 USDC auth    │
+  │                                   │
+  │── Execute + Payment ──────────────►│ {agentId, input, paymentHeader}
+  │                                   │──► Step 1: Local validation
+  │                                   │     (signature, timestamp, nonce, payTo, asset)
+  │                                   │──► Step 2: Settle with facilitator (5 retries)
+  │                                   │     POST {facilitator}/settle
+  │                                   │──► Step 3: Wait for on-chain confirmation
+  │                                   │──► Step 4: Execute ADK task
+  │                                   │
+  │◄── Output + TxHash ───────────────│ {output, transaction_hash}
+```
+
+### PaymentService API
+
+```go
+// Seller side
+svc.CreateRequirement(payee, amount)        // build PaymentRequirements to return in 402
+svc.VerifyAndSettle(ctx, header, amount)    // validate → settle → confirm; returns txHash
+
+// Buyer side
+svc.CreatePayment(ctx, payee, amount, orderID)   // sign and return PaymentHeader
+svc.SignRequirement(req, orderID)                // sign an existing requirement
+```
+
+### Facilitator
+
+- Default URL: `http://localhost:8080` (configurable)
+- Endpoints: `POST /verify`, `POST /settle`
+- Settlement uses exponential back-off retry (5 attempts, starting at 500 ms)
+- On-chain mechanism: EIP-3009 `transferWithAuthorization` on the USDC contract
 
 ---
 
@@ -504,9 +297,9 @@ contract PaymentVault {
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Marketplace Node                         │
+│                        Marketplace Node                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │   libp2p     │  │   IPFS       │  │   ADK Agent Runtime  │  │
+│  │   libp2p    │  │   IPFS       │  │   ADK Agent Runtime  │  │
 │  │   Host       │  │   Client     │  │   (Native Go)        │  │
 │  └──────────────┘  └──────────────┘  └──────────────────────┘  │
 │  ┌──────────────┐                                              │
@@ -515,19 +308,34 @@ contract PaymentVault {
 │  │ (go-ds-crdt) │                                              │
 │  └──────────────┘                                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │  Ethereum    │  │  EIP-8004    │  │   EIP-402            │  │
-│  │  Client      │  │  Registry    │  │   Payments           │  │
+│  │  Ethereum    │  │  x402         │  │   Wallet             │  │
+│  │  Client      │  │  Payments    │  │   (ERC20)           │  │
 │  └──────────────┘  └──────────────┘  └──────────────────────┘  │
+│  ┌──────────────┐                                              │
+│  │  HTTP API    │                                              │
+│  │  (gorilla)   │                                              │
+│  └──────────────┘                                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Development Prerequisites
+### CLI Commands
 
-1. **Go 1.22+** - Main application and ADK agent runtime
-2. **Foundry** - Solidity contracts
-3. **Embedded IPFS-lite** - Started by Betar (no separate daemon)
-4. **Ethereum node** - Sepolia testnet recommended
-5. **Model API credentials** - e.g. `GOOGLE_API_KEY` for Gemini
+```bash
+# Start node + agent (recommended)
+betar start --name "math-agent" --price 0.001 --port 4001
+
+# Start marketplace node only
+betar node --port 4001
+
+# Run agent
+betar agent serve --name "my-agent"
+
+# Create order
+betar order create --agent-id <peerID> --price 0.001
+
+# Check wallet balance
+betar wallet balance
+```
 
 ---
 
@@ -539,3 +347,4 @@ contract PaymentVault {
 - ADK Go repository: https://github.com/google/adk-go
 - EIP-8004: https://eips.ethereum.org/EIPS/eip-8004
 - IPFS-lite: https://github.com/hsanjuan/ipfs-lite
+- x402-go: https://github.com/mark3labs/x402-go

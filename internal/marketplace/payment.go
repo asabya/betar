@@ -3,17 +3,19 @@ package marketplace
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
-	"io"
-
-	v2 "github.com/mark3labs/x402-go"
-	"github.com/mark3labs/x402-go/signers/evm"
+	x402v2 "github.com/mark3labs/x402-go/v2"
+	"github.com/mark3labs/x402-go/v2/signers/evm"
 
 	"github.com/asabya/betar/internal/eth"
 	"github.com/ethereum/go-ethereum/common"
@@ -21,33 +23,42 @@ import (
 )
 
 const (
-	FacilitatorURL = "https://facilitator.x402.rs"
+	FacilitatorURL = "http://localhost:8080"
 	DefaultTimeout = 60
 )
 
-// PaymentService handles EIP-402 (x402) payments
-type PaymentService struct {
-	wallet      *eth.Wallet
-	paymentAddr string
-	network     string
-	facilitator string
+// Challenge is a server-issued nonce binding a payment to a specific interaction.
+type Challenge struct {
+	CorrelationID string
+	Nonce         string
+	ExpiresAt     time.Time
 }
 
-// FacilitatorVerifyRequest is sent to facilitator to verify payment (x402 v2 format)
+// ChallengeStore stores pending challenges keyed by correlation ID.
+type ChallengeStore struct {
+	mu         sync.Mutex
+	challenges map[string]*Challenge
+}
+
+func newChallengeStore() *ChallengeStore {
+	return &ChallengeStore{challenges: make(map[string]*Challenge)}
+}
+
+type PaymentService struct {
+	wallet         *eth.Wallet
+	paymentAddr    string
+	network        string
+	facilitator    string
+	verifier       *PaymentVerifier
+	challengeStore *ChallengeStore
+}
+
 type FacilitatorVerifyRequest struct {
 	X402Version         int                   `json:"x402Version"`
-	PaymentPayload      PaymentPayloadV2      `json:"paymentPayload"`
-	PaymentRequirements v2.PaymentRequirement `json:"paymentRequirements"`
+	PaymentPayload      x402v2.PaymentPayload `json:"paymentPayload"`
+	PaymentRequirements PaymentRequirements   `json:"paymentRequirements"`
 }
 
-// PaymentPayloadV2 is the v2 payment payload structure
-type PaymentPayloadV2 struct {
-	X402Version int                   `json:"x402Version"`
-	Accepted    v2.PaymentRequirement `json:"accepted"`
-	Payload     v2.EVMPayload         `json:"payload"`
-}
-
-// FacilitatorVerifyResponse is returned by facilitator (x402 v2 format)
 type FacilitatorVerifyResponse struct {
 	IsValid        bool   `json:"isValid"`
 	InvalidReason  string `json:"invalidReason,omitempty"`
@@ -55,31 +66,144 @@ type FacilitatorVerifyResponse struct {
 	Payer          string `json:"payer,omitempty"`
 }
 
-// NewPaymentService creates a new payment service
 func NewPaymentService(wallet *eth.Wallet, paymentAddr string) *PaymentService {
 	return &PaymentService{
-		wallet:      wallet,
-		paymentAddr: paymentAddr,
-		network:     NetworkBaseSepolia, // Default to Base Sepolia
-		facilitator: FacilitatorURL,
+		wallet:         wallet,
+		paymentAddr:    paymentAddr,
+		network:        NetworkBaseSepolia,
+		facilitator:    FacilitatorURL,
+		verifier:       NewPaymentVerifier(NetworkBaseSepolia),
+		challengeStore: newChallengeStore(),
 	}
 }
 
-// GetPaymentAddress returns the payment address for receiving payments
+// GenerateChallenge creates a fresh server nonce bound to the given correlation ID.
+// ttl controls how long the challenge is valid before expiry.
+func (s *PaymentService) GenerateChallenge(correlationID string, ttl time.Duration) (*Challenge, error) {
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+
+	c := &Challenge{
+		CorrelationID: correlationID,
+		Nonce:         nonce,
+		ExpiresAt:     time.Now().Add(ttl),
+	}
+
+	s.challengeStore.mu.Lock()
+	s.challengeStore.challenges[correlationID] = c
+	s.challengeStore.mu.Unlock()
+
+	return c, nil
+}
+
+// ConsumeChallenge retrieves and deletes a challenge by correlation ID.
+// Returns an error if the challenge is unknown or has expired.
+func (s *PaymentService) ConsumeChallenge(correlationID string) (*Challenge, error) {
+	s.challengeStore.mu.Lock()
+	defer s.challengeStore.mu.Unlock()
+
+	c, ok := s.challengeStore.challenges[correlationID]
+	if !ok {
+		return nil, fmt.Errorf("challenge not found for correlation_id: %s", correlationID)
+	}
+	delete(s.challengeStore.challenges, correlationID)
+
+	if time.Now().After(c.ExpiresAt) {
+		return nil, fmt.Errorf("challenge expired for correlation_id: %s", correlationID)
+	}
+
+	return c, nil
+}
+
+// CleanupExpiredChallenges removes challenges that have passed their expiry time.
+func (s *PaymentService) CleanupExpiredChallenges() {
+	now := time.Now()
+	s.challengeStore.mu.Lock()
+	defer s.challengeStore.mu.Unlock()
+
+	for id, c := range s.challengeStore.challenges {
+		if now.After(c.ExpiresAt) {
+			delete(s.challengeStore.challenges, id)
+		}
+	}
+}
+
+// SignRequirementWithNonce signs a PaymentRequirements using a specific serverNonce
+// (e.g., a challenge nonce issued by the server) instead of a randomly-generated one.
+// The serverNonce must be a 32-byte value encoded as lowercase hex (with or without 0x prefix).
+func (s *PaymentService) SignRequirementWithNonce(req *PaymentRequirements, serverNonce string) (*PaymentHeader, error) {
+	if s.wallet == nil {
+		return nil, fmt.Errorf("wallet not configured")
+	}
+
+	// Normalize nonce to "0x"-prefixed hex.
+	normalizedNonce := serverNonce
+	if !strings.HasPrefix(normalizedNonce, "0x") && !strings.HasPrefix(normalizedNonce, "0X") {
+		normalizedNonce = "0x" + normalizedNonce
+	}
+
+	now := time.Now()
+	validAfter := now.Add(-5 * time.Second).Unix()
+	timeout := req.MaxTimeoutSeconds
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	validBefore := now.Add(time.Duration(timeout) * time.Second).Unix()
+
+	auth := &EVMAuthorization{
+		From:        s.wallet.AddressHex(),
+		To:          req.PayTo,
+		Value:       req.Amount,
+		ValidAfter:  fmt.Sprintf("%d", validAfter),
+		ValidBefore: fmt.Sprintf("%d", validBefore),
+		Nonce:       normalizedNonce,
+	}
+
+	digest, err := s.verifier.ComputeEIP712Digest(auth)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute EIP-712 digest: %w", err)
+	}
+
+	sig, err := s.wallet.SignRaw(digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign digest: %w", err)
+	}
+
+	sigHex := "0x" + hex.EncodeToString(sig)
+	payload := &EVMPayload{
+		Signature:     sigHex,
+		Authorization: *auth,
+	}
+
+	paymentID := generatePaymentID(s.wallet.AddressHex(), req.PayTo, req.Amount, req.Network)
+
+	header := &PaymentHeader{
+		Requirement: *req,
+		Accepted:    req,
+		Payer:       s.wallet.AddressHex(),
+		PaymentID:   paymentID,
+		Signature:   sigHex,
+		Payload:     payload,
+	}
+
+	return header, nil
+}
+
 func (s *PaymentService) GetPaymentAddress() string {
 	return s.paymentAddr
 }
 
-// GetUSDCBalance returns the USDC balance of the wallet
 func (s *PaymentService) GetUSDCBalance(ctx context.Context) (*big.Int, error) {
 	usdcAddress := GetUSDCAddress(s.network)
 	return s.wallet.ERC20Balance(ctx, common.HexToAddress(usdcAddress))
 }
 
-// CreateRequirement creates an unsigned payment requirement (for seller to send to buyer)
-func (s *PaymentService) CreateRequirement(payee string, amount string) (*PaymentRequirement, error) {
+func (s *PaymentService) CreateRequirement(payee string, amount string) (*PaymentRequirements, error) {
 	usdcAddress := GetUSDCAddress(s.network)
-	requirement := CreatePaymentRequirement(
+	requirement := CreatePaymentRequirements(
 		s.network,
 		amount,
 		usdcAddress,
@@ -89,11 +213,9 @@ func (s *PaymentService) CreateRequirement(payee string, amount string) (*Paymen
 	return &requirement, nil
 }
 
-// CreatePayment creates a payment requirement for a buyer to sign
 func (s *PaymentService) CreatePayment(ctx context.Context, payee string, amount string, orderID string) (*PaymentHeader, error) {
-	// Create payment requirement
 	usdcAddress := GetUSDCAddress(s.network)
-	requirement := CreatePaymentRequirement(
+	requirement := CreatePaymentRequirements(
 		s.network,
 		amount,
 		usdcAddress,
@@ -101,7 +223,6 @@ func (s *PaymentService) CreatePayment(ctx context.Context, payee string, amount
 		DefaultTimeout,
 	)
 
-	// Create payment ID
 	paymentID := generatePaymentID(
 		s.wallet.AddressHex(),
 		payee,
@@ -109,61 +230,32 @@ func (s *PaymentService) CreatePayment(ctx context.Context, payee string, amount
 		s.network,
 	)
 
-	// Create payment header
-	header := &PaymentHeader{
-		Requirement: requirement,
-		Payer:       s.wallet.AddressHex(),
-		PaymentID:   paymentID,
-	}
-
-	// Sign the requirement
-	signature, err := s.signRequirement(&requirement, orderID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign requirement: %w", err)
-	}
-	header.Signature = signature
-
-	return header, nil
+	return s.signPayment(&requirement, paymentID)
 }
 
-// SignRequirement signs a payment requirement and creates a PaymentHeader (used by buyer)
-func (s *PaymentService) SignRequirement(req *PaymentRequirement, orderID string) (*PaymentHeader, error) {
-	// Create payment ID
+func (s *PaymentService) SignRequirement(req *PaymentRequirements, orderID string) (*PaymentHeader, error) {
 	paymentID := generatePaymentID(
 		s.wallet.AddressHex(),
 		req.PayTo,
-		req.MaxAmountRequired,
+		req.Amount,
 		req.Network,
 	)
 
-	// Create payment header
-	header := &PaymentHeader{
-		Requirement: *req,
-		Payer:       s.wallet.AddressHex(),
-		PaymentID:   paymentID,
-	}
-
-	// Sign the requirement
-	signature, err := s.signRequirement(req, orderID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign requirement: %w", err)
-	}
-	header.Signature = signature
-
-	return header, nil
+	return s.signPayment(req, paymentID)
 }
 
-// createX402Signer creates an x402-go EVM signer for EIP-3009 signatures
 func (s *PaymentService) createX402Signer() (*evm.Signer, error) {
 	privateKeyHex := s.wallet.PrivateKeyHex()
 
-	usdcAddress := GetUSDCAddress(s.network)
+	tokens := []x402v2.TokenConfig{
+		{
+			Address:  GetUSDCAddress(s.network),
+			Symbol:   "USDC",
+			Decimals: 6,
+		},
+	}
 
-	signer, err := evm.NewSigner(
-		evm.WithPrivateKey(privateKeyHex),
-		evm.WithNetwork(s.network),
-		evm.WithToken(usdcAddress, "USDC", 6),
-	)
+	signer, err := evm.NewSigner(s.network, privateKeyHex, tokens)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create x402 signer: %w", err)
 	}
@@ -171,55 +263,54 @@ func (s *PaymentService) createX402Signer() (*evm.Signer, error) {
 	return signer, nil
 }
 
-// signPayment creates an EIP-3009 authorization for the payment requirement
-func (s *PaymentService) signPayment(req *PaymentRequirement, paymentID string) (*PaymentHeader, error) {
+func (s *PaymentService) signPayment(req *PaymentRequirements, paymentID string) (*PaymentHeader, error) {
+	fmt.Printf("[signPayment] Starting payment signing - PayTo: %s, Amount: %s, Network: %s\n", req.PayTo, req.Amount, req.Network)
+
 	signer, err := s.createX402Signer()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signer: %w", err)
 	}
+	fmt.Printf("[signPayment] X402 signer created successfully\n")
 
 	paymentPayload, err := signer.Sign(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign payment: %w", err)
 	}
+	fmt.Printf("[signPayment] Payment signed successfully %+v\n", paymentPayload)
 
-	evmPayload, ok := paymentPayload.Payload.(v2.EVMPayload)
+	evmPayload, ok := paymentPayload.Payload.(x402v2.EVMPayload)
 	if !ok {
 		return nil, fmt.Errorf("unexpected payload type: %T", paymentPayload.Payload)
 	}
 
 	header := &PaymentHeader{
 		Requirement: *req,
-		Accepted:    *req,
+		Accepted:    req,
 		Payer:       s.wallet.AddressHex(),
 		PaymentID:   paymentID,
 		Signature:   evmPayload.Signature,
 		Payload:     &evmPayload,
 	}
 
+	fmt.Printf("[signPayment] Payment header created - Payer: %s, PaymentID: %s\n", header.Payer, header.PaymentID)
+	fmt.Printf("[signPayment] Payment header: %+v\n", header)
 	return header, nil
 }
 
-// signRequirement creates an EIP-712 signature for the payment requirement (legacy)
-func (s *PaymentService) signRequirement(req *PaymentRequirement, orderID string) (string, error) {
-	// Create the payment payload to sign
-	// Following x402 v2 EIP-712 structure
+func (s *PaymentService) signRequirement(req *PaymentRequirements, orderID string) (string, error) {
 	sigData := fmt.Sprintf("%s:%s:%s:%s:%s:%d",
 		req.Scheme,
 		req.Network,
-		req.MaxAmountRequired,
+		req.Amount,
 		req.Asset,
 		req.PayTo,
 		req.MaxTimeoutSeconds,
 	)
 
-	// Add order ID for replay protection
 	sigData = fmt.Sprintf("%s:%s", sigData, orderID)
 
-	// Hash the data
 	hash := crypto.Keccak256Hash([]byte(sigData))
 
-	// Sign with wallet's private key
 	signature, err := s.wallet.Sign(hash.Bytes())
 	if err != nil {
 		return "", fmt.Errorf("failed to sign payment: %w", err)
@@ -228,39 +319,45 @@ func (s *PaymentService) signRequirement(req *PaymentRequirement, orderID string
 	return hex.EncodeToString(signature), nil
 }
 
-// VerifyAndSettle verifies payment with facilitator and settles on-chain
-func (s *PaymentService) VerifyAndSettle(ctx context.Context, header *PaymentHeader) (string, error) {
+func (s *PaymentService) VerifyAndSettle(ctx context.Context, header *PaymentHeader, expectedAmount *big.Int) (string, error) {
 	if header == nil {
 		return "", fmt.Errorf("payment header is nil")
 	}
 
-	// Step 1: Validate payment header locally
-	if err := s.validatePaymentHeader(header); err != nil {
-		return "", fmt.Errorf("invalid payment header: %w", err)
+	fmt.Printf("[VerifyAndSettle] >>> Starting payment verification for PaymentID: %s <<<\n", header.PaymentID)
+	fmt.Printf("[VerifyAndSettle] Payer: %s, PayTo: %s, Amount: %s USDC\n", header.Payer, header.Requirement.PayTo, header.Requirement.Amount)
+
+	fmt.Printf("[VerifyAndSettle] Step 1: Comprehensive local validation (signature, timestamps, nonce)...\n")
+	if err := s.verifier.ValidatePayment(header, s.paymentAddr, expectedAmount); err != nil {
+		return "", fmt.Errorf("payment validation failed: %w", err)
+	}
+	fmt.Printf("[VerifyAndSettle] Step 1: Local validation passed (signature verified, nonce checked)\n")
+
+	fmt.Printf("[VerifyAndSettle] Step 2: Settling with facilitator...\n")
+	txHash, err := s.settleWithFacilitatorWithRetry(ctx, header)
+	if err != nil {
+		return "", fmt.Errorf("facilitator settlement failed: %w", err)
+	}
+	fmt.Printf("[VerifyAndSettle] Step 2: Facilitator settlement successful, txHash: %s\n", txHash)
+
+	fmt.Printf("[VerifyAndSettle] Step 3: Waiting for transaction confirmation...\n")
+	hash := common.HexToHash(txHash)
+
+	receipt, err := s.wallet.WaitForTransaction(ctx, hash)
+	if err != nil {
+		fmt.Printf("[VerifyAndSettle] Transaction confirmation failed: %v\n", err)
+		return "", fmt.Errorf("transaction not confirmed: %w", err)
 	}
 
-	// Step 2: Verify with facilitator
-	verified, err := s.verifyWithFacilitator(ctx, header)
-	if err != nil {
-		return "", fmt.Errorf("facilitator verification failed: %w", err)
-	}
-	if !verified {
-		return "", fmt.Errorf("payment verification failed")
+	if receipt.Status != 1 {
+		return "", fmt.Errorf("transaction failed on-chain")
 	}
 
-	// Step 3: Settle on-chain (transfer USDC to seller)
-	fmt.Printf("[VerifyAndSettle] Settlement started for PaymentID: %s\n", header.PaymentID)
-	txHash, err := s.settlePayment(ctx, header)
-	if err != nil {
-		fmt.Printf("[VerifyAndSettle] Settlement failed: %v\n", err)
-		return "", fmt.Errorf("payment settlement failed: %w", err)
-	}
-	fmt.Printf("[VerifyAndSettle] Settlement successful. TxHash: %s\n", txHash)
+	fmt.Printf("[VerifyAndSettle] >>> Transaction confirmed. TxHash: %s, Block: %d <<<\n", txHash, receipt.BlockNumber)
 
 	return txHash, nil
 }
 
-// validatePaymentHeader validates the payment header locally
 func (s *PaymentService) validatePaymentHeader(header *PaymentHeader) error {
 	if header.Requirement.Scheme != "exact" {
 		fmt.Printf("[validatePaymentHeader] Unsupported scheme: %s\n", header.Requirement.Scheme)
@@ -284,7 +381,6 @@ func (s *PaymentService) validatePaymentHeader(header *PaymentHeader) error {
 			s.paymentAddr, header.Requirement.PayTo)
 	}
 
-	// Verify USDC address
 	expectedUSDC := GetUSDCAddress(s.network)
 	if header.Requirement.Asset != expectedUSDC {
 		fmt.Printf("[validatePaymentHeader] Asset mismatch: %s (expected: %s)\n", header.Requirement.Asset, expectedUSDC)
@@ -294,15 +390,21 @@ func (s *PaymentService) validatePaymentHeader(header *PaymentHeader) error {
 	return nil
 }
 
-// verifyWithFacilitator sends payment to x402 facilitator for verification
 func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *PaymentHeader) (bool, error) {
+	acceptedReq := header.Requirement
+	if header.Accepted != nil {
+		acceptedReq = *header.Accepted
+	}
+
+	payload := x402v2.PaymentPayload{
+		X402Version: x402v2.X402Version,
+		Accepted:    acceptedReq,
+		Payload:     *header.Payload,
+	}
+
 	req := FacilitatorVerifyRequest{
-		X402Version: 2,
-		PaymentPayload: PaymentPayloadV2{
-			X402Version: 2,
-			Accepted:    header.Accepted,
-			Payload:     *header.Payload,
-		},
+		X402Version:         x402v2.X402Version,
+		PaymentPayload:      payload,
 		PaymentRequirements: header.Requirement,
 	}
 
@@ -335,7 +437,6 @@ func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *Paym
 	fmt.Printf("[verifyWithFacilitator] Response Status: %d\n", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		// Read body for error details
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		fmt.Printf("[verifyWithFacilitator] Error Response Body: %s\n", string(bodyBytes))
 		return false, fmt.Errorf("facilitator returned status %d: %s", resp.StatusCode, string(bodyBytes))
@@ -356,26 +457,216 @@ func (s *PaymentService) verifyWithFacilitator(ctx context.Context, header *Paym
 	return verifyResp.IsValid, nil
 }
 
-// settlePayment executes the USDC transfer to the seller
-func (s *PaymentService) settlePayment(ctx context.Context, header *PaymentHeader) (string, error) {
-	amount, ok := new(big.Int).SetString(header.Requirement.MaxAmountRequired, 10)
+type FacilitatorSettleRequest struct {
+	X402Version         int                   `json:"x402Version"`
+	PaymentPayload      x402v2.PaymentPayload `json:"paymentPayload"`
+	PaymentRequirements PaymentRequirements   `json:"paymentRequirements"`
+}
+
+type FacilitatorSettleResponse struct {
+	Success       bool   `json:"success"`
+	Transaction   string `json:"transaction,omitempty"`
+	InvalidReason string `json:"invalidReason,omitempty"`
+}
+
+func (s *PaymentService) settleWithFacilitator(ctx context.Context, header *PaymentHeader) (string, error) {
+	acceptedReq := header.Requirement
+	if header.Accepted != nil {
+		acceptedReq = *header.Accepted
+	}
+
+	payload := x402v2.PaymentPayload{
+		X402Version: x402v2.X402Version,
+		Accepted:    acceptedReq,
+		Payload:     *header.Payload,
+	}
+
+	req := FacilitatorSettleRequest{
+		X402Version:         x402v2.X402Version,
+		PaymentPayload:      payload,
+		PaymentRequirements: header.Requirement,
+	}
+
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		fmt.Printf("[settleWithFacilitator] Failed to marshal request: %v\n", err)
+		return "", fmt.Errorf("failed to marshal settle request: %w", err)
+	}
+
+	fmt.Printf("[settleWithFacilitator] Settle Request URL: %s/settle\n", s.facilitator)
+	fmt.Printf("[settleWithFacilitator] Request Body: %s\n", string(reqBody))
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		s.facilitator+"/settle", bytes.NewBuffer(reqBody))
+	if err != nil {
+		fmt.Printf("[settleWithFacilitator] Failed to create HTTP request: %v\n", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		fmt.Printf("[settleWithFacilitator] HTTP request failed: %v\n", err)
+		return "", fmt.Errorf("facilitator settle request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("[settleWithFacilitator] Response Status: %d\n", resp.StatusCode)
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	fmt.Printf("[settleWithFacilitator] Response Body: %s\n", string(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("facilitator returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var settleResp FacilitatorSettleResponse
+	if err := json.Unmarshal(bodyBytes, &settleResp); err != nil {
+		return "", fmt.Errorf("failed to decode facilitator response: %w", err)
+	}
+
+	if !settleResp.Success {
+		return "", fmt.Errorf("settlement failed: %s", settleResp.InvalidReason)
+	}
+
+	fmt.Printf("[settleWithFacilitator] Settlement successful. TxHash: %s\n", settleResp.Transaction)
+	return settleResp.Transaction, nil
+}
+
+func (s *PaymentService) settleWithFacilitatorWithRetry(ctx context.Context, header *PaymentHeader) (string, error) {
+	const maxRetries = 5
+	baseDelay := 500 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := baseDelay * time.Duration(1<<uint(attempt-1))
+			fmt.Printf("[settleWithFacilitatorWithRetry] Attempt %d failed, retrying in %v...\n", attempt, delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+
+		txHash, err := s.settleWithFacilitator(ctx, header)
+		if err == nil {
+			return txHash, nil
+		}
+		lastErr = err
+		fmt.Printf("[settleWithFacilitatorWithRetry] Attempt %d/%d failed: %v\n", attempt+1, maxRetries, err)
+	}
+
+	return "", fmt.Errorf("settlement failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+func (s *PaymentService) SubmitPayment(ctx context.Context, header *PaymentHeader) (string, error) {
+	if header == nil {
+		return "", fmt.Errorf("payment header is nil")
+	}
+
+	if header.Payload == nil {
+		return "", fmt.Errorf("payment payload is nil")
+	}
+
+	auth := header.Payload.Authorization
+	from := common.HexToAddress(auth.From)
+	to := common.HexToAddress(auth.To)
+
+	value, ok := new(big.Int).SetString(auth.Value, 10)
 	if !ok {
-		return "", fmt.Errorf("invalid amount: %s", header.Requirement.MaxAmountRequired)
+		return "", fmt.Errorf("invalid amount: %s", auth.Value)
+	}
+
+	validAfter, ok := new(big.Int).SetString(auth.ValidAfter, 10)
+	if !ok {
+		return "", fmt.Errorf("invalid validAfter: %s", auth.ValidAfter)
+	}
+
+	validBefore, ok := new(big.Int).SetString(auth.ValidBefore, 10)
+	if !ok {
+		return "", fmt.Errorf("invalid validBefore: %s", auth.ValidBefore)
+	}
+
+	nonceStr := auth.Nonce
+	if strings.HasPrefix(nonceStr, "0x") {
+		nonceStr = nonceStr[2:]
+	}
+	nonceBytes, err := hex.DecodeString(nonceStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid nonce hex: %w", err)
+	}
+	if len(nonceBytes) != 32 {
+		return "", fmt.Errorf("nonce must be 32 bytes, got %d", len(nonceBytes))
+	}
+
+	sigStr := header.Payload.Signature
+	if strings.HasPrefix(sigStr, "0x") {
+		sigStr = sigStr[2:]
+	}
+	signature, err := hex.DecodeString(sigStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid signature: %w", err)
 	}
 
 	usdcAddress := common.HexToAddress(header.Requirement.Asset)
-	toAddress := common.HexToAddress(header.Requirement.PayTo)
 
-	txHash, err := s.wallet.TransferERC20(ctx, usdcAddress, toAddress, amount)
+	fmt.Printf("[SubmitPayment] Submitting EIP-3009 transferWithAuthorization\n")
+	fmt.Printf("[SubmitPayment] From: %s, To: %s, Amount: %s\n", from.Hex(), to.Hex(), value.String())
+	fmt.Printf("[SubmitPayment] USDC Contract: %s\n", usdcAddress.Hex())
+	fmt.Printf("[SubmitPayment] ValidAfter: %s, ValidBefore: %s\n", validAfter.String(), validBefore.String())
+	fmt.Printf("[SubmitPayment] Nonce (hex): %x\n", nonceBytes)
+
+	callData, err := s.createTransferWithAuthorizationData(from, to, value, validAfter, validBefore, nonceBytes, signature)
 	if err != nil {
-		return "", fmt.Errorf("transfer failed: %w", err)
+		return "", fmt.Errorf("failed to create tx data: %w", err)
 	}
 
+	txHash, err := s.wallet.SubmitTransaction(ctx, usdcAddress, big.NewInt(0), callData)
+	if err != nil {
+		return "", fmt.Errorf("failed to submit transaction: %w", err)
+	}
+
+	fmt.Printf("[SubmitPayment] Transaction submitted. TxHash: %s\n", txHash.Hex())
 	return txHash.Hex(), nil
 }
 
-// VerifyPayment verifies a buyer's payment header without settling
-// Used by sellers to confirm payment is valid before executing the task
+func (s *PaymentService) createTransferWithAuthorizationData(
+	from, to common.Address,
+	amount, validAfter, validBefore *big.Int,
+	nonceBytes []byte,
+	signature []byte,
+) ([]byte, error) {
+	if len(signature) != 65 {
+		return nil, fmt.Errorf("signature must be 65 bytes, got %d", len(signature))
+	}
+
+	if len(nonceBytes) != 32 {
+		return nil, fmt.Errorf("nonce must be 32 bytes, got %d", len(nonceBytes))
+	}
+
+	var nonce [32]byte
+	copy(nonce[:], nonceBytes)
+
+	callData, err := usdcABI.Pack(
+		"transferWithAuthorization",
+		from,
+		to,
+		amount,
+		validAfter,
+		validBefore,
+		nonce,
+		signature,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack ABI: %w", err)
+	}
+
+	return callData, nil
+}
+
 func (s *PaymentService) VerifyPayment(header *PaymentHeader) error {
 	if header == nil {
 		return fmt.Errorf("payment header is nil")
@@ -392,7 +683,6 @@ func (s *PaymentService) VerifyPayment(header *PaymentHeader) error {
 	return nil
 }
 
-// WaitForSettlement waits for the settlement transaction to be confirmed
 func (s *PaymentService) WaitForSettlement(ctx context.Context, txHash string, timeout time.Duration) (bool, error) {
 	hash := common.HexToHash(txHash)
 
@@ -407,14 +697,12 @@ func (s *PaymentService) WaitForSettlement(ctx context.Context, txHash string, t
 	return true, nil
 }
 
-// generatePaymentID creates a unique payment ID
 func generatePaymentID(payer, payee, amount, network string) string {
 	data := fmt.Sprintf("%s:%s:%s:%s:%d", payer, payee, amount, network, time.Now().UnixNano())
 	hash := crypto.Keccak256Hash([]byte(data))
 	return fmt.Sprintf("0x%x", hash)
 }
 
-// ParsePayment parses a payment header from JSON
 func ParsePayment(data []byte) (*PaymentHeader, error) {
 	var header PaymentHeader
 	if err := json.Unmarshal(data, &header); err != nil {
@@ -423,7 +711,6 @@ func ParsePayment(data []byte) (*PaymentHeader, error) {
 	return &header, nil
 }
 
-// ToJSON serializes payment header to JSON
 func (p *PaymentHeader) ToJSON() ([]byte, error) {
 	return json.Marshal(p)
 }
