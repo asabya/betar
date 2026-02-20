@@ -80,6 +80,19 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 	return m, nil
 }
 
+func NewManagerWithRuntime(runtime Runtime, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, paymentSvc *marketplace.PaymentService, walletAddr string, eip8004Client *eip8004.Client) *Manager {
+	return &Manager{
+		runtime:        runtime,
+		ipfsClient:     ipfsClient,
+		p2pHost:        p2pHost,
+		listingService: listingService,
+		paymentService: paymentSvc,
+		walletAddress:  walletAddr,
+		eip8004:        eip8004Client,
+		localAgents:    make(map[string]*LocalAgent),
+	}
+}
+
 // RegisterAgent registers a new agent locally and publishes to marketplace
 func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgent, error) {
 	// Create agent in runtime
