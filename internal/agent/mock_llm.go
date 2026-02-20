@@ -11,15 +11,13 @@ import (
 )
 
 type MockLLM struct {
-	mu         sync.RWMutex
-	responses  map[string]string
-	defaultMsg string
+	mu        sync.RWMutex
+	responses map[string]string
 }
 
 func NewMockLLM(responses map[string]string) *MockLLM {
 	return &MockLLM{
-		responses:  responses,
-		defaultMsg: "mock response",
+		responses: responses,
 	}
 }
 
@@ -37,7 +35,7 @@ func (m *MockLLM) GenerateContent(ctx context.Context, req *model.LLMRequest, st
 			inputText = req.Contents[0].Parts[0].Text
 		}
 
-		responseText := m.defaultMsg
+		responseText := inputText
 		for pattern, resp := range m.responses {
 			if strings.Contains(inputText, pattern) {
 				responseText = resp
