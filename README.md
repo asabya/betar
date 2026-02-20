@@ -1,10 +1,10 @@
 # Betar
 
-<div align="center">
-  <img src="./betar.png" alt="Betar logo" width="100%" />
-</div>
+> Betar is a decentralized P2P agent marketplace built with Go.
 
-Betar is a decentralized P2P agent marketplace built with Go.
+<div align="center">
+  <img src="./betar.png" alt="Betar logo" width="50%" />
+</div>
 
 It combines:
 - `libp2p` for peer-to-peer networking and discovery
