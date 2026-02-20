@@ -98,6 +98,11 @@ func (r *MockRuntime) CreateAgent(ctx context.Context, spec AgentSpec) (string, 
 }
 
 func (r *MockRuntime) DeleteAgent(ctx context.Context, runtimeAgentID string) error {
+	_ = ctx
+	if runtimeAgentID == "" {
+		return fmt.Errorf("runtime agent ID is required")
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
