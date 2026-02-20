@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,8 +18,6 @@ import (
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/pkg/types"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/cobra"
 )
 
@@ -162,7 +159,6 @@ func init() {
 	agentExecuteCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
 	agentExecuteCmd.Flags().String("agent-id", "", "Agent ID")
 	agentExecuteCmd.Flags().StringP("task", "t", "", "Task input")
-	agentExecuteCmd.Flags().Float64("payment", 0, "Payment amount")
 
 	// Order create flags
 	orderCreateCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -247,7 +243,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 			Metadata:  registered.MetadataCID,
 			SellerID:  p2pHost.ID().String(),
 			Addrs:     p2pHost.AddrStrings(),
-			Protocols: []string{string(p2p.ProtocolID), p2p.X402ProtocolID},
+			Protocols: []string{p2p.X402ProtocolID},
 			Timestamp: time.Now().Unix(),
 		})
 	}
@@ -401,7 +397,7 @@ func initRuntime(cmd *cobra.Command) error {
 		AppName:   "betar",
 		ModelName: cfg.Agent.Model,
 		APIKey:    cfg.Agent.APIKey,
-	}, ipfsClient, p2pHost, streamHandler, listingService, cfg.P2P.PrivKey, paymentService, walletAddr)
+	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr)
 	if err != nil {
 		return fmt.Errorf("failed to create agent manager: %w", err)
 	}
@@ -462,7 +458,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		return nil, nil, fmt.Errorf("failed to register serving agent: %w", err)
 	}
 
-	protocols := []string{string(p2p.ProtocolID), p2p.X402ProtocolID}
+	protocols := []string{p2p.X402ProtocolID}
 
 	listing := &types.AgentListingMessage{
 		Type:      "list",
@@ -627,98 +623,15 @@ func executeAgent(cmd *cobra.Command, args []string) error {
 	apiURL, _ := cmd.Flags().GetString("api-url")
 	client := api.NewClient(apiURL)
 
-	// First attempt - without payment
 	var resp struct {
 		Output string `json:"output"`
-		Error  string `json:"error"`
 	}
-
-	payErr, err := client.PostWithPayment(fmt.Sprintf("/agents/%s/execute", agentID), map[string]string{"input": task}, &resp)
-	// Check payment required first (even if err is nil, since 402 returns err=nil but payErr non-nil)
-	if payErr != nil && payErr.RequiresPayment {
-		fmt.Printf("\n=== Payment Required ===\n")
-		fmt.Printf("Agent: %s\n", payErr.AgentID)
-		fmt.Printf("Message: %s\n", payErr.Message)
-
-		var displayedAtomicAmount string
-		if payReq, ok := payErr.PaymentRequirement.(map[string]interface{}); ok {
-			if atomicAmt, ok := payReq["amount"].(string); ok && atomicAmt != "" {
-				displayedAtomicAmount = atomicAmt
-				fmt.Printf("Amount: %s\n", marketplace.FormatUSDC(atomicAmt))
-			} else {
-				fmt.Printf("Amount: (unable to parse)\n")
-			}
-			if asset, ok := payReq["extra"].(map[string]interface{}); ok {
-				fmt.Printf("Asset: %s\n", asset["name"])
-			}
-		}
-
-		fmt.Printf("\nDo you want to proceed with payment? (y/N): ")
-
-		var confirm string
-		fmt.Scanln(&confirm)
-		if confirm != "y" && confirm != "Y" {
-			fmt.Println("Payment cancelled by user")
-			return nil
-		}
-
-		// Sign payment and retry
-		fmt.Println("\nSigning payment...")
-
-		// Convert to marketplace.PaymentRequirements
-		var paymentReq marketplace.PaymentRequirements
-		if reqBytes, err := json.Marshal(payErr.PaymentRequirement); err == nil {
-			json.Unmarshal(reqBytes, &paymentReq)
-		}
-
-		// Call local API to sign payment (using the same client since we need local wallet)
-		var paymentHeader marketplace.PaymentHeader
-		if signErr := client.Post("/payment/sign", map[string]interface{}{
-			"paymentRequirement": paymentReq,
-		}, &paymentHeader); signErr != nil {
-			return fmt.Errorf("failed to sign payment: %w", signErr)
-		}
-
-		// Validate that signed amount matches what was displayed to user
-		if displayedAtomicAmount != "" && paymentHeader.Requirement.Amount != displayedAtomicAmount {
-			return fmt.Errorf("SECURITY WARNING: signed amount (%s) does not match displayed amount (%s). Aborting.",
-				paymentHeader.Requirement.Amount, displayedAtomicAmount)
-		}
-
-		fmt.Printf("Payment signed. PaymentID: %s, Amount: %s\n", paymentHeader.PaymentID, marketplace.FormatUSDC(paymentHeader.Requirement.Amount))
-
-		// Retry with payment (seller will settle via facilitator)
-		var respWithPayment struct {
-			Output    string `json:"output"`
-			Error     string `json:"error"`
-			PaymentID string `json:"paymentId"`
-		}
-		if err := client.Post(fmt.Sprintf("/agents/%s/execute", agentID), map[string]interface{}{
-			"input":         task,
-			"paymentHeader": paymentHeader,
-		}, &respWithPayment); err != nil {
-			return err
-		}
-
-		if respWithPayment.Error != "" {
-			return fmt.Errorf("execution error: %s", respWithPayment.Error)
-		}
-
-		fmt.Printf("Payment ID: %s\n", respWithPayment.PaymentID)
-		fmt.Println("Task output:")
-		fmt.Println(respWithPayment.Output)
-		return nil
-	} else if err != nil {
+	if err := client.Post(fmt.Sprintf("/agents/%s/execute", agentID), map[string]string{"input": task}, &resp); err != nil {
 		return err
-	}
-
-	if resp.Error != "" {
-		return fmt.Errorf("execution error: %s", resp.Error)
 	}
 
 	fmt.Println("Task output:")
 	fmt.Println(resp.Output)
-
 	return nil
 }
 
@@ -750,84 +663,6 @@ func createOrder(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-func findListingByAgentID(agentID string) (*types.AgentListing, bool) {
-	if listingService == nil {
-		return nil, false
-	}
-
-	if l, ok := listingService.GetListing(agentID); ok {
-		return l, true
-	}
-
-	for _, l := range listingService.ListListings() {
-		if l != nil && l.ID == agentID {
-			return l, true
-		}
-	}
-
-	return nil, false
-}
-
-func extractRuntimeAgentID(listing *types.AgentListing) string {
-	if listing == nil {
-		return ""
-	}
-	if listing.SellerID == "" {
-		return listing.ID
-	}
-	prefix := listing.SellerID + "/"
-	if strings.HasPrefix(listing.ID, prefix) {
-		return strings.TrimPrefix(listing.ID, prefix)
-	}
-	return listing.ID
-}
-
-func connectToListingPeer(ctx context.Context, listing *types.AgentListing) error {
-	if listing == nil {
-		return fmt.Errorf("listing is nil")
-	}
-	if listing.SellerID == "" {
-		return fmt.Errorf("listing seller ID is empty")
-	}
-
-	sellerPeerID, err := peer.Decode(listing.SellerID)
-	if err != nil {
-		return fmt.Errorf("invalid seller peer ID %q: %w", listing.SellerID, err)
-	}
-
-	if len(listing.Addrs) == 0 {
-		return agentManager.ConnectToAgent(ctx, sellerPeerID)
-	}
-
-	addrInfos := make([]peer.AddrInfo, 0, len(listing.Addrs))
-	for _, rawAddr := range listing.Addrs {
-		addr, err := multiaddr.NewMultiaddr(rawAddr)
-		if err != nil {
-			continue
-		}
-		addrInfos = append(addrInfos, peer.AddrInfo{ID: sellerPeerID, Addrs: []multiaddr.Multiaddr{addr}})
-	}
-
-	if len(addrInfos) == 0 {
-		return agentManager.ConnectToAgent(ctx, sellerPeerID)
-	}
-
-	var connectErr error
-	for _, info := range addrInfos {
-		if err := p2pHost.Connect(ctx, info); err == nil {
-			return nil
-		} else {
-			connectErr = err
-		}
-	}
-
-	if connectErr != nil {
-		return connectErr
-	}
-
-	return agentManager.ConnectToAgent(ctx, sellerPeerID)
 }
 
 func checkBalance(cmd *cobra.Command, args []string) error {

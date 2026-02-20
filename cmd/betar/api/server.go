@@ -23,7 +23,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	r := mux.NewRouter()
 
 	// Add handlers
-	handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost, paymentSvc)
+	handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
 	handlers.RegisterWalletHandlers(r)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
 
