@@ -376,6 +376,58 @@ make test
 make vet
 ```
 
+## Testing
+
+### Run all tests
+
+```bash
+make test
+```
+
+### Run specific test packages
+
+```bash
+go test ./internal/p2p/... -v
+go test ./internal/marketplace/... -v
+go test ./internal/agent/... -v
+```
+
+### End-to-end tests
+
+E2E tests use libp2p's mock network (`github.com/libp2p/go-libp2p/p2p/net/mock`) to simulate multi-peer scenarios in-memory without real networking:
+
+```bash
+go test ./internal/e2e/... -v
+```
+
+**Available E2E tests:**
+
+| Test | Description |
+|------|-------------|
+| `TestE2E_CRDTConvergence` | 5 peers list agents, all converge to see all listings via CRDT |
+| `TestE2E_StreamMessaging` | Direct P2P stream message exchange between 2 peers |
+| `TestE2E_AgentDiscoveryAndExecution` | Buyer discovers agent via CRDT, executes task via stream |
+| `TestE2E_DelistAgent` | Agent delisting propagates via CRDT to other peers |
+| `TestE2E_MultipleSellers` | 3 sellers list services, 1 buyer discovers and executes on all |
+
+### Run a single test
+
+```bash
+go test ./internal/e2e/... -v -run TestE2E_CRDTConvergence
+```
+
+### Run with timeout
+
+```bash
+go test ./... -timeout 120s
+```
+
+### Run with race detector
+
+```bash
+go test ./... -race
+```
+
 ## Notes
 
 - IPFS is embedded via IPFS-lite in-process (no external daemon required).
