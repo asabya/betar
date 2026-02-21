@@ -15,6 +15,7 @@ import (
 	syncds "github.com/ipfs/go-datastore/sync"
 	crdt "github.com/ipfs/go-ds-crdt"
 	ipld "github.com/ipfs/go-ipld-format"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
 const (
@@ -45,9 +46,13 @@ func NewListingCRDT(ctx context.Context, ps *p2p.PubSub, ipfsClient *ipfs.Client
 }
 
 func newListingCRDT(ctx context.Context, ps *p2p.PubSub, dagService ipld.DAGService) (*ListingCRDT, error) {
+	return NewListingCRDTWithPubSub(ctx, ps.Raw(), dagService)
+}
+
+func NewListingCRDTWithPubSub(ctx context.Context, ps *pubsub.PubSub, dagService ipld.DAGService) (*ListingCRDT, error) {
 	metaStore := syncds.MutexWrap(ds.NewMapDatastore())
 
-	broadcaster, err := crdt.NewPubSubBroadcaster(ctx, ps.Raw(), CRDTTopic)
+	broadcaster, err := crdt.NewPubSubBroadcaster(ctx, ps, CRDTTopic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create CRDT broadcaster: %w", err)
 	}

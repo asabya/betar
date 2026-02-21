@@ -123,6 +123,24 @@ func (c *Client) SetAgentURI(ctx context.Context, agentID *big.Int, newURI strin
 	return nil
 }
 
+// GetAgentOwner returns the owner of an agent NFT.
+func (c *Client) GetAgentOwner(ctx context.Context, agentID *big.Int) (common.Address, error) {
+	if c == nil || c.identity == nil {
+		return common.Address{}, nil
+	}
+	opts := &bind.CallOpts{Context: ctx}
+	return c.identity.OwnerOf(opts, agentID)
+}
+
+// GetAgentTokenURI returns the tokenURI for an agent.
+func (c *Client) GetAgentTokenURI(ctx context.Context, agentID *big.Int) (string, error) {
+	if c == nil || c.identity == nil {
+		return "", nil
+	}
+	opts := &bind.CallOpts{Context: ctx}
+	return c.identity.TokenURI(opts, agentID)
+}
+
 // LinkWallet links the agent's Ethereum payment wallet via an EIP-712 signed
 // proof. deadline is a Unix timestamp; sig is the 65-byte ECDSA signature.
 func (c *Client) LinkWallet(ctx context.Context, agentID *big.Int, wallet common.Address, deadline *big.Int, sig []byte) error {
@@ -171,11 +189,19 @@ func (c *Client) GiveFeedback(ctx context.Context, agentID *big.Int,
 func (c *Client) GetReputationSummary(ctx context.Context, agentID *big.Int,
 	tag1, tag2 string) (count uint64, summaryValue int64, decimals uint8, err error) {
 
+	return c.GetReputationSummaryForClients(ctx, agentID, nil, tag1, tag2)
+}
+
+// GetReputationSummaryForClients retrieves feedback for an agent from specific client addresses.
+// Pass nil for clientAddresses to get aggregated summary across all known clients.
+func (c *Client) GetReputationSummaryForClients(ctx context.Context, agentID *big.Int,
+	clientAddresses []common.Address, tag1, tag2 string) (count uint64, summaryValue int64, decimals uint8, err error) {
+
 	if c == nil || c.reputation == nil {
 		return 0, 0, 0, nil
 	}
 	opts := &bind.CallOpts{Context: ctx}
-	out, callErr := c.reputation.GetSummary(opts, agentID, nil, tag1, tag2)
+	out, callErr := c.reputation.GetSummary(opts, agentID, clientAddresses, tag1, tag2)
 	if callErr != nil {
 		return 0, 0, 0, fmt.Errorf("eip8004: GetReputationSummary: %w", callErr)
 	}
