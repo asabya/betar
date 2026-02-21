@@ -1,0 +1,12 @@
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["lib"]
+build_info = false
+via_ir = true
+
+[rpc_endpoints]
+anvil = "http://localhost:8545"
+
+[etherscan]
+anvil = { key = "dummy" }

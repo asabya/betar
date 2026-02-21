@@ -30,11 +30,11 @@ This document contains research findings and implementation status for building 
 | Wallet/ETH | ✅ Done | ERC20 transfers |
 | Smart Contracts | ✅ Done | AgentRegistry, ReputationRegistry, ValidationRegistry, PaymentVault |
 | HTTP API Server | ✅ Done | gorilla/mux |
-| EIP-8004 Client | ❌ Missing | on-chain registration not integrated |
+| EIP-8004 Client | ✅ Done | official contracts on Base Sepolia; RegisterIdentity, GiveFeedback, validations |
 
 ### Known Gaps
 
-1. **EIP-8004 Client**: On-chain agent registration not wired to marketplace
+1. **ValidationRegistry**: Not yet deployed on Base Sepolia testnet (`ERC8004_VALIDATION_ADDR` must be set manually when available)
 2. **Documentation**: This file needs to be updated as implementation evolves
 
 ---
@@ -149,9 +149,71 @@ type AgentRegistration struct {
 }
 ```
 
-### Status
+### Official Deployed Contracts (Base Sepolia)
 
-⚠️ **Not Integrated**: On-chain registration via EIP-8004 is not wired to marketplace. The contracts exist but the Go client (`internal/eip8004/`) is a stub.
+| Registry | Address |
+|----------|---------|
+| IdentityRegistry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
+| ReputationRegistry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
+| ValidationRegistry | *(not yet on testnet)* |
+
+### Go Bindings
+
+Generated with `abigen` from official ABIs in `internal/eip8004/abis/`:
+
+```bash
+abigen --abi internal/eip8004/abis/IdentityRegistry.json \
+       --pkg eip8004 --type IdentityRegistry \
+       --out internal/eip8004/identity_binding.go
+```
+
+### Client API
+
+```go
+// Create client (called in initRuntime)
+client, err := eip8004.NewClient(ctx,
+    rpcURL, privKey,
+    identityAddr, reputationAddr, validationAddr,
+    chainID,
+)
+
+// Register an agent NFT — returns on-chain agentId
+tokenID, err := client.RegisterIdentity(ctx, "ipfs://"+metadataCID)
+
+// Update metadata URI
+err = client.SetAgentURI(ctx, tokenID, newURI)
+
+// Link payment wallet (EIP-712 signed)
+err = client.LinkWallet(ctx, tokenID, walletAddr, deadline, sig)
+
+// Submit feedback (buyer, after successful execution)
+err = client.GiveFeedback(ctx, tokenID, 100, 0, "execution", "", "", "", [32]byte{})
+
+// Read reputation summary
+count, value, decimals, err := client.GetReputationSummary(ctx, tokenID, "", "")
+
+// Request validation from a validator
+err = client.RequestValidation(ctx, validatorAddr, tokenID, requestURI, requestHash)
+
+// Get all validation hashes for an agent
+hashes, err := client.GetAgentValidations(ctx, tokenID)
+```
+
+### Integration Points
+
+- **Registration**: `agent.Manager.RegisterAgent()` calls `RegisterIdentity` after IPFS pin; stores `TokenID` on `LocalAgent`
+- **CRDT propagation**: `TokenID` is included in `AgentListingMessage` and `AgentListing` so buyers can see the on-chain agentId
+- **Buyer feedback**: After a successful paid x402 execution, `submitFeedbackAsync()` fires a goroutine to call `GiveFeedback` (best-effort, non-blocking)
+- **HTTP API**: `GET /agents/{tokenId}/reputation` and `GET /agents/{tokenId}/validations`
+- **Graceful degradation**: If `ETHEREUM_PRIVATE_KEY` is missing or RPC fails, all EIP-8004 calls are no-ops; CRDT listing still works
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `ERC8004_IDENTITY_ADDR` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | IdentityRegistry on Base Sepolia |
+| `ERC8004_REPUTATION_ADDR` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | ReputationRegistry on Base Sepolia |
+| `ERC8004_VALIDATION_ADDR` | — | ValidationRegistry (not yet on testnet) |
 
 ---
 

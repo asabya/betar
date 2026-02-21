@@ -33,6 +33,7 @@ type AgentListing struct {
 	Addrs     []string `json:"addrs,omitempty"`     // Multiaddrs to dial seller peer
 	Protocols []string `json:"protocols,omitempty"` // Supported app protocols
 	Timestamp int64    `json:"timestamp"`           // Unix timestamp
+	TokenID   string   `json:"tokenId,omitempty"`   // ERC-8004 on-chain agentId (decimal string)
 }
 
 // Order represents a marketplace order
@@ -57,6 +58,7 @@ type AgentListingMessage struct {
 	Addrs     []string `json:"addrs,omitempty"`
 	Protocols []string `json:"protocols,omitempty"`
 	Timestamp int64    `json:"timestamp"`
+	TokenID   string   `json:"tokenId,omitempty"` // ERC-8004 on-chain agentId
 }
 
 // OrderMessage represents a pubsub message for order updates

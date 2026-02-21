@@ -42,10 +42,12 @@ type IPFSConfig struct {
 
 // EthereumConfig holds Ethereum configuration
 type EthereumConfig struct {
-	RPCURL       string
-	PrivateKey   string
-	ChainID      int64
-	RegistryAddr string
+	RPCURL         string
+	PrivateKey     string
+	ChainID        int64
+	IdentityAddr   string // ERC-8004 IdentityRegistry on Base Sepolia
+	ReputationAddr string // ERC-8004 ReputationRegistry on Base Sepolia
+	ValidationAddr string // ERC-8004 ValidationRegistry (may be empty)
 }
 
 // AgentConfig holds agent configuration
@@ -56,9 +58,8 @@ type AgentConfig struct {
 
 // StorageConfig holds local persistent storage configuration
 type StorageConfig struct {
-	DataDir       string
-	P2PKeyPath    string
-	WalletKeyPath string
+	DataDir    string
+	P2PKeyPath string
 }
 
 // LoadConfig loads configuration from environment
@@ -77,9 +78,12 @@ func LoadConfig() (*Config, error) {
 			APIURL: getEnv("IPFS_API_URL", "http://localhost:5001"),
 		},
 		Ethereum: &EthereumConfig{
-			RPCURL:     getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
-			PrivateKey: getEnv("ETHEREUM_PRIVATE_KEY", ""),
-			ChainID:    84532, // Base Sepolia
+			RPCURL:         getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
+			PrivateKey:     getEnv("ETHEREUM_PRIVATE_KEY", ""),
+			ChainID:        84532, // Base Sepolia
+			IdentityAddr:   getEnv("ERC8004_IDENTITY_ADDR", "0x8004A818BFB912233c491871b3d84c89A494BD9e"),
+			ReputationAddr: getEnv("ERC8004_REPUTATION_ADDR", "0x8004B663056A597Dffe9eCcC1965A193B7388713"),
+			ValidationAddr: getEnv("ERC8004_VALIDATION_ADDR", ""),
 		},
 		Agent: &AgentConfig{
 			Model:  getEnv("GOOGLE_MODEL", "gemini-2.5-flash"),
@@ -90,15 +94,13 @@ func LoadConfig() (*Config, error) {
 
 	dataDir := getEnv("BETAR_DATA_DIR", defaultDataDir())
 	keyPath := getEnv("BETAR_P2P_KEY_PATH", filepath.Join(dataDir, "p2p_identity.key"))
-	walletKeyPath := getEnv("BETAR_WALLET_KEY_PATH", filepath.Join(dataDir, "wallet.key"))
 
 	cfg.Storage.DataDir = dataDir
 	cfg.Storage.P2PKeyPath = keyPath
-	cfg.Storage.WalletKeyPath = walletKeyPath
 
 	// If no private key from env, load or generate wallet key
 	if cfg.Ethereum.PrivateKey == "" {
-		walletKey, err := loadOrCreateWalletKey(cfg.Storage.WalletKeyPath)
+		walletKey, err := loadOrCreateWalletKey(filepath.Join(dataDir, "wallet.key"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to load or create wallet key: %w", err)
 		}

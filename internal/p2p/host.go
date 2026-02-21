@@ -141,3 +141,8 @@ func (h *Host) Close() error {
 func (h *Host) RawHost() host.Host {
 	return h.host
 }
+
+// NewHostFromRaw creates a Host wrapper around an existing libp2p host
+func NewHostFromRaw(h host.Host) *Host {
+	return &Host{host: h}
+}
