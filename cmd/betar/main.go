@@ -64,6 +64,8 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	}
 	defer shutdownRuntime()
 
+	tui.SetRuntime(p2pHost, agentManager, listingService, orderService)
+
 	fmt.Println("Starting Betar TUI...")
 	printRuntimeInfo()
 

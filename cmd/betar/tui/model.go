@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type model struct {
@@ -38,4 +39,8 @@ func NewModel() model {
 		cmdInput:     ti,
 		logs:         []string{"Betar TUI started. Type /help for commands."},
 	}
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
 }

@@ -7,5 +7,6 @@ import (
 func RunTUI() error {
 	m := NewModel()
 	p := tea.NewProgram(m)
-	return p.Run()
+	_, err := p.Run()
+	return err
 }

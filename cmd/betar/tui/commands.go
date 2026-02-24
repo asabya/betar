@@ -6,6 +6,14 @@ import (
 
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/marketplace"
+	"github.com/asabya/betar/internal/p2p"
+)
+
+var (
+	runtimeP2pHost        *p2p.Host
+	runtimeAgentManager   *agent.Manager
+	runtimeListingService *marketplace.AgentListingService
+	runtimeOrderService   *marketplace.OrderService
 )
 
 func processCommand(cmd string) []string {
@@ -46,9 +54,8 @@ func hasPrefix(s, prefix string) bool {
 }
 
 func listAgents() []string {
-	// Access global agentManager from main package
-	if agentManager := getAgentManager(); agentManager != nil {
-		agents := agentManager.ListAgents()
+	if mgr := getAgentManager(); mgr != nil {
+		agents := mgr.ListAgents()
 		if len(agents) == 0 {
 			return []string{"No local agents registered"}
 		}
@@ -63,8 +70,8 @@ func listAgents() []string {
 }
 
 func discoverAgents() []string {
-	if listingService := getListingService(); listingService != nil {
-		listings := listingService.ListListings()
+	if ls := getListingService(); ls != nil {
+		listings := ls.ListListings()
 		if len(listings) == 0 {
 			return []string{"No agents discovered"}
 		}
@@ -81,8 +88,8 @@ func discoverAgents() []string {
 }
 
 func listPeers() []string {
-	if p2pHost := getP2PHost(); p2pHost != nil {
-		peers := p2pHost.GetPeers()
+	if h := getP2PHost(); h != nil {
+		peers := h.RawHost().Network().Peers()
 		if len(peers) == 0 {
 			return []string{"No connected peers"}
 		}
@@ -98,11 +105,11 @@ func listPeers() []string {
 
 func showStatus() []string {
 	var result []string
-	if p2pHost := getP2PHost(); p2pHost != nil {
+	if h := getP2PHost(); h != nil {
 		result = append(result, "Node Status:")
-		result = append(result, fmt.Sprintf("  Peer ID: %s", p2pHost.ID()))
-		result = append(result, fmt.Sprintf("  Addresses: %v", p2pHost.AddrStrings()))
-		peers := p2pHost.GetPeers()
+		result = append(result, fmt.Sprintf("  Peer ID: %s", h.ID()))
+		result = append(result, fmt.Sprintf("  Addresses: %v", h.AddrStrings()))
+		peers := h.RawHost().Network().Peers()
 		result = append(result, fmt.Sprintf("  Connected Peers: %d", len(peers)))
 	}
 	return result
@@ -132,21 +139,25 @@ func createOrder(cmd string) []string {
 	return []string{fmt.Sprintf("Creating order for agent %s with price %s (not implemented)", agentID, price)}
 }
 
-// Placeholder functions - will be replaced with actual runtime references
-// These are called from update.go and need to access the global variables from main.go
-
 func getAgentManager() *agent.Manager {
-	return nil
+	return runtimeAgentManager
 }
 
 func getListingService() *marketplace.AgentListingService {
-	return nil
+	return runtimeListingService
 }
 
 func getOrderService() *marketplace.OrderService {
-	return nil
+	return runtimeOrderService
 }
 
-func getP2PHost() interface{} {
-	return nil
+func getP2PHost() *p2p.Host {
+	return runtimeP2pHost
+}
+
+func SetRuntime(p2pHost *p2p.Host, agentManager *agent.Manager, listingService *marketplace.AgentListingService, orderService *marketplace.OrderService) {
+	runtimeP2pHost = p2pHost
+	runtimeAgentManager = agentManager
+	runtimeListingService = listingService
+	runtimeOrderService = orderService
 }
