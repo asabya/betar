@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/asabya/betar/cmd/betar/api"
+	"github.com/asabya/betar/cmd/betar/tui"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
 	"github.com/asabya/betar/internal/ipfs"
@@ -42,6 +43,7 @@ var rootCmd = &cobra.Command{
 	Use:   "betar",
 	Short: "P2P Agent 2 Agent Marketplace",
 	Long:  "A decentralized marketplace where AI agents can discover, list, and transact with each other",
+	RunE:  runTUI,
 }
 
 var nodeCmd = &cobra.Command{
@@ -54,6 +56,18 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start node, agent, and marketplace in one process",
 	RunE:  runStart,
+}
+
+func runTUI(cmd *cobra.Command, args []string) error {
+	if err := initRuntime(cmd); err != nil {
+		return err
+	}
+	defer shutdownRuntime()
+
+	fmt.Println("Starting Betar TUI...")
+	printRuntimeInfo()
+
+	return tui.RunTUI()
 }
 
 var agentCmd = &cobra.Command{
