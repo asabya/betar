@@ -184,6 +184,15 @@ func (w *Wallet) WaitForTransaction(ctx context.Context, hash common.Hash) (*get
 	}
 }
 
+// GetTransaction retrieves a transaction by hash
+func (w *Wallet) GetTransaction(ctx context.Context, hash common.Hash) (*gethtypes.Transaction, bool, error) {
+	tx, isPending, err := w.client.TransactionByHash(ctx, hash)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get transaction: %w", err)
+	}
+	return tx, isPending, nil
+}
+
 // GenerateKey generates a new random private key
 func GenerateKey() (*ecdsa.PrivateKey, error) {
 	return crypto.GenerateKey()
@@ -350,12 +359,22 @@ func LoadOrCreateWallet(walletPath, password, rpcURL string) (*Wallet, error) {
 	return NewWallet(privateKeyHex, rpcURL)
 }
 
-// Sign signs data with the wallet's private key
+// Sign signs data with the wallet's private key (hashes the data first with Keccak256).
 func (w *Wallet) Sign(data []byte) ([]byte, error) {
 	hash := crypto.Keccak256Hash(data)
 	signature, err := crypto.Sign(hash.Bytes(), w.privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
+	}
+	return signature, nil
+}
+
+// SignRaw signs a pre-computed digest directly without additional hashing.
+// Use this for EIP-712 digests that are already keccak256 hashes.
+func (w *Wallet) SignRaw(digest []byte) ([]byte, error) {
+	signature, err := crypto.Sign(digest, w.privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign digest: %w", err)
 	}
 	return signature, nil
 }
@@ -417,6 +436,56 @@ func (w *Wallet) TransferERC20(ctx context.Context, tokenAddress, to common.Addr
 		Gas:      65000, // ERC20 transfer gas limit
 		GasPrice: gasPrice,
 		Data:     callData,
+	})
+
+	// Sign transaction
+	signedTx, err := gethtypes.SignTx(tx, gethtypes.NewEIP155Signer(w.chainID), w.privateKey)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	// Send transaction
+	err = w.client.SendTransaction(ctx, signedTx)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
+	}
+
+	return signedTx.Hash(), nil
+}
+
+// SubmitTransaction submits a generic transaction to a contract
+func (w *Wallet) SubmitTransaction(ctx context.Context, to common.Address, value *big.Int, data []byte) (common.Hash, error) {
+	// Get nonce
+	nonce, err := w.client.PendingNonceAt(ctx, w.address)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %w", err)
+	}
+
+	// Get gas price
+	gasPrice, err := w.client.SuggestGasPrice(ctx)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get gas price: %w", err)
+	}
+
+	// Estimate gas
+	gasLimit, err := w.client.EstimateGas(ctx, ethereum.CallMsg{
+		From:  w.address,
+		To:    &to,
+		Value: value,
+		Data:  data,
+	})
+	if err != nil {
+		gasLimit = 100000 // fallback
+	}
+
+	// Create transaction
+	tx := gethtypes.NewTx(&gethtypes.LegacyTx{
+		Nonce:    nonce,
+		To:       &to,
+		Value:    value,
+		Gas:      gasLimit,
+		GasPrice: gasPrice,
+		Data:     data,
 	})
 
 	// Sign transaction

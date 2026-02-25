@@ -14,11 +14,12 @@ import (
 )
 
 type Server struct {
-	httpServer *http.Server
-	port       int
+	httpServer     *http.Server
+	port           int
+	paymentService *marketplace.PaymentService
 }
 
-func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host) *Server {
+func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService) *Server {
 	r := mux.NewRouter()
 
 	// Add handlers
@@ -40,6 +41,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
+		paymentService: paymentSvc,
 	}
 }
 

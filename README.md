@@ -14,6 +14,7 @@ It combines:
 - Embedded IPFS-lite integration (`add`, `cat`, `pin`) using the same libp2p host
 - Agent manager + direct stream request handlers
 - Marketplace listings replicated via `go-ds-crdt` over pubsub
+- x402 payment flow (PaymentRequiredResponse, payment verification)
 - Single-process `start` command (node + agent + IPFS publication + CRDT listing)
 - Direct stream execution (`/betar/marketplace/1.0.0`) with CRDT-based agent discovery
 - Deterministic libp2p identity persisted on disk
