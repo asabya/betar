@@ -1,57 +1,80 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 func (m model) View() string {
-	width := 100
-	rightPanelWidth := width / 3
-	leftPanelWidth := width - rightPanelWidth
+	w := m.width
+	if w == 0 {
+		w = 100
+	}
+	h := m.height
+	if h == 0 {
+		h = 30
+	}
 
-	rightPanel := m.renderRightPanel(rightPanelWidth)
-	leftTop := m.renderLogs(leftPanelWidth)
-	leftBottom := m.renderInput(leftPanelWidth)
+	rightW := w / 3
+	leftW := w - rightW
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		lipgloss.JoinHorizontal(lipgloss.Top, leftTop, rightPanel),
-		lipgloss.JoinHorizontal(lipgloss.Bottom, leftBottom, rightPanel),
-	)
+	logH := h * 2 / 3
+	inputH := h - logH
+
+	rightPanel := m.renderRightPanel(rightW, h)
+	leftTop := m.renderLogs(leftW, logH)
+	leftBottom := m.renderInput(leftW, inputH)
+
+	leftCol := lipgloss.JoinVertical(lipgloss.Left, leftTop, leftBottom)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightPanel)
 }
 
-func (m model) renderRightPanel(width int) string {
-	nodeStatus := TitleStyle.Render("Node Status") + "\n"
-	nodeStatus += "PeerID: " + m.peerID + "\n"
-	nodeStatus += "Addresses: " + formatAddrs(m.addresses) + "\n"
-	nodeStatus += "Peers: " + string(rune('0'+m.connectedPeers)) + "\n"
-	nodeStatus += "Wallet: " + m.walletAddr + "\n"
-	nodeStatus += "DID: " + m.did + "\n"
+func (m model) renderRightPanel(width, height int) string {
+	peerID := m.peerID
+	if peerID == "" {
+		peerID = "(not started)"
+	}
+	walletAddr := m.walletAddr
+	if walletAddr == "" {
+		walletAddr = "(none)"
+	}
 
-	tasks := TitleStyle.Render("Incoming Tasks") + "\n"
-	if len(m.pendingTasks) == 0 {
-		tasks += "  (none)"
+	content := TitleStyle.Render("Node Status") + "\n"
+	content += "PeerID: " + peerID + "\n"
+	content += "Addrs:  " + formatAddrs(m.addresses) + "\n"
+	content += fmt.Sprintf("Peers:  %d\n", m.connectedPeers)
+	content += "Wallet: " + walletAddr + "\n"
+
+	content += "\n" + TitleStyle.Render("Local Agents") + "\n"
+	if len(m.agents) == 0 {
+		content += "  (none)\n"
 	} else {
-		for _, t := range m.pendingTasks {
-			tasks += "- " + t + "\n"
+		for _, a := range m.agents {
+			content += fmt.Sprintf("  %s\n  %s\n\n", a.Name, a.DID)
 		}
 	}
 
-	return PanelStyle.Width(width).Render(nodeStatus + "\n" + tasks)
-}
-
-func (m model) renderLogs(width int) string {
-	logContent := strings.Join(m.logs, "\n")
-	if logContent == "" {
-		logContent = "(no logs)"
+	content += "\n" + TitleStyle.Render("Incoming Tasks") + "\n"
+	if len(m.pendingTasks) == 0 {
+		content += "  (none)"
+	} else {
+		for _, t := range m.pendingTasks {
+			content += "- " + t + "\n"
+		}
 	}
-	return PanelStyle.Width(width).Render(logContent)
+
+	m.rightViewport.SetContent(content)
+	return PanelStyle.Width(width - 2).Height(height - 2).Render(m.rightViewport.View())
 }
 
-func (m model) renderInput(width int) string {
-	return InputStyle.Width(width).Render(m.cmdInput.View())
+func (m model) renderLogs(width, height int) string {
+	return PanelStyle.Width(width - 2).Height(height - 2).Render(m.logsViewport.View())
+}
+
+func (m model) renderInput(width, height int) string {
+	return InputStyle.Width(width - 2).Height(height - 2).Render(m.cmdInput.View())
 }
 
 func formatAddrs(addrs []string) string {
