@@ -45,6 +45,7 @@ type model struct {
 	walletAddr     string
 	agents         []agentInfo
 
+	// suggestions holds the current autocomplete matches; wired in autocomplete task.
 	suggestions   []string
 	suggestionIdx int
 
