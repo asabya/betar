@@ -128,7 +128,12 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	fmt.Println("Starting Betar TUI...")
 	printRuntimeInfo()
 
-	return tui.RunTUI()
+	tuiErr := tui.RunTUI()
+	if pipeErr == nil {
+		_ = w.Close()
+		os.Stdout = origStdout
+	}
+	return tuiErr
 }
 
 var agentCmd = &cobra.Command{

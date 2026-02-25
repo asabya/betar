@@ -133,7 +133,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rightW := msg.Width - leftW
 		logH := msg.Height * 2 / 3
 		m.logsViewport = viewport.New(leftW-4, logH-2)
+		m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
+		m.logsViewport.GotoBottom()
 		m.rightViewport = viewport.New(rightW-4, msg.Height-4)
+		m.rightViewport.SetContent(buildRightPanelContent(m))
 	case logMsg:
 		line := string(msg)
 		m.logs = append(m.logs, line)
@@ -159,9 +162,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Recompute autocomplete suggestions whenever input changes.
 	newSuggestions := computeSuggestions(m.cmdInput.Value())
 	if len(newSuggestions) != len(m.suggestions) {
-		m.suggestions = newSuggestions
 		m.suggestionIdx = 0
 	}
+	m.suggestions = newSuggestions
 	return m, cmd
 }
 
