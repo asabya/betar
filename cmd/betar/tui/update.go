@@ -72,7 +72,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			// If a suggestion is highlighted, fill it in instead of executing.
 			if len(m.suggestions) > 0 {
-				m.cmdInput.SetValue(m.suggestions[m.suggestionIdx])
+				m.cmdInput.SetValue(m.suggestions[m.suggestionIdx%len(m.suggestions)])
 				m.suggestions = nil
 				m.suggestionIdx = 0
 				return m, nil
@@ -80,7 +80,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCommand()
 		case "tab":
 			if len(m.suggestions) > 0 {
-				m.cmdInput.SetValue(m.suggestions[m.suggestionIdx])
+				m.cmdInput.SetValue(m.suggestions[m.suggestionIdx%len(m.suggestions)])
 				m.suggestionIdx = (m.suggestionIdx + 1) % len(m.suggestions)
 			}
 			return m, nil
