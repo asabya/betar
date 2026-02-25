@@ -14,7 +14,21 @@ var (
 	runtimeAgentManager   *agent.Manager
 	runtimeListingService *marketplace.AgentListingService
 	runtimeOrderService   *marketplace.OrderService
+	runtimeWalletAddr     string
 )
+
+// knownCommands is the list used for autocomplete suggestions.
+var knownCommands = []string{
+	"/help",
+	"/status",
+	"/peers",
+	"/exit",
+	"/wallet balance",
+	"/agent list",
+	"/agent discover",
+	"/agent execute ",
+	"/order create ",
+}
 
 func processCommand(cmd string) []string {
 	switch {
@@ -41,16 +55,12 @@ func processCommand(cmd string) []string {
 	case cmd == "/wallet balance":
 		return checkBalance()
 	case strings.HasPrefix(cmd, "/agent execute "):
-		return executeAgent(cmd)
+		return executeAgent(strings.TrimPrefix(cmd, "/agent execute "))
 	case strings.HasPrefix(cmd, "/order create "):
-		return createOrder(cmd)
+		return createOrder(strings.TrimPrefix(cmd, "/order create "))
 	default:
 		return []string{"Unknown command: " + cmd + ". Type /help for available commands."}
 	}
-}
-
-func hasPrefix(s, prefix string) bool {
-	return strings.HasPrefix(s, prefix)
 }
 
 func listAgents() []string {
@@ -119,23 +129,23 @@ func checkBalance() []string {
 	return []string{"Wallet balance: (not implemented)"}
 }
 
-func executeAgent(cmd string) []string {
-	parts := strings.SplitN(cmd, " ", 3)
-	if len(parts) < 3 {
+func executeAgent(args string) []string {
+	parts := strings.SplitN(args, " ", 2)
+	if len(parts) < 2 || parts[0] == "" {
 		return []string{"Usage: /agent execute <agent-id> <task>"}
 	}
-	agentID := parts[1]
-	task := parts[2]
+	agentID := parts[0]
+	task := parts[1]
 	return []string{fmt.Sprintf("Executing task on agent %s: %s (not implemented)", agentID, task)}
 }
 
-func createOrder(cmd string) []string {
-	parts := strings.SplitN(cmd, " ", 3)
-	if len(parts) < 3 {
+func createOrder(args string) []string {
+	parts := strings.SplitN(args, " ", 2)
+	if len(parts) < 2 || parts[0] == "" {
 		return []string{"Usage: /order create <agent-id> <price>"}
 	}
-	agentID := parts[1]
-	price := parts[2]
+	agentID := parts[0]
+	price := parts[1]
 	return []string{fmt.Sprintf("Creating order for agent %s with price %s (not implemented)", agentID, price)}
 }
 
@@ -160,4 +170,13 @@ func SetRuntime(p2pHost *p2p.Host, agentManager *agent.Manager, listingService *
 	runtimeAgentManager = agentManager
 	runtimeListingService = listingService
 	runtimeOrderService = orderService
+}
+
+// SetWallet sets the Ethereum wallet address for display in the TUI.
+func SetWallet(addr string) {
+	runtimeWalletAddr = addr
+}
+
+func getWalletAddr() string {
+	return runtimeWalletAddr
 }
