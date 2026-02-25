@@ -70,8 +70,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "enter":
+			// If a suggestion is highlighted, fill it in instead of executing.
+			if len(m.suggestions) > 0 {
+				m.cmdInput.SetValue(m.suggestions[m.suggestionIdx])
+				m.suggestions = nil
+				m.suggestionIdx = 0
+				return m, nil
+			}
 			return m.handleCommand()
+		case "tab":
+			if len(m.suggestions) > 0 {
+				m.cmdInput.SetValue(m.suggestions[m.suggestionIdx])
+				m.suggestionIdx = (m.suggestionIdx + 1) % len(m.suggestions)
+			}
+			return m, nil
+		case "esc":
+			m.suggestions = nil
+			m.suggestionIdx = 0
+			m.cmdInput.SetValue("")
+			return m, nil
 		case "up":
+			if len(m.suggestions) > 0 {
+				if m.suggestionIdx > 0 {
+					m.suggestionIdx--
+				} else {
+					m.suggestionIdx = len(m.suggestions) - 1
+				}
+				return m, nil
+			}
 			if m.historyIndex > 0 {
 				m.historyIndex--
 				if m.historyIndex < len(m.cmdHistory) {
@@ -80,6 +106,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "down":
+			if len(m.suggestions) > 0 {
+				m.suggestionIdx = (m.suggestionIdx + 1) % len(m.suggestions)
+				return m, nil
+			}
 			if m.historyIndex < len(m.cmdHistory) {
 				m.historyIndex++
 				if m.historyIndex < len(m.cmdHistory) {
@@ -88,6 +118,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cmdInput.SetValue("")
 				}
 			}
+			return m, nil
+		case "pgup":
+			m.rightViewport.HalfViewUp()
+			return m, nil
+		case "pgdown":
+			m.rightViewport.HalfViewDown()
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
@@ -119,6 +155,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	m.cmdInput, cmd = m.cmdInput.Update(msg)
+	// Recompute autocomplete suggestions whenever input changes.
+	newSuggestions := computeSuggestions(m.cmdInput.Value())
+	if len(newSuggestions) != len(m.suggestions) {
+		m.suggestions = newSuggestions
+		m.suggestionIdx = 0
+	}
 	return m, cmd
 }
 
@@ -149,4 +191,19 @@ func (m model) handleCommand() (model, tea.Cmd) {
 	m.logsViewport.GotoBottom()
 
 	return m, nil
+}
+
+// computeSuggestions returns commands from knownCommands that start with
+// the given input string but are not equal to it (i.e., the input is a prefix).
+func computeSuggestions(input string) []string {
+	if input == "" {
+		return nil
+	}
+	var result []string
+	for _, cmd := range knownCommands {
+		if strings.HasPrefix(cmd, input) && cmd != input {
+			result = append(result, cmd)
+		}
+	}
+	return result
 }
