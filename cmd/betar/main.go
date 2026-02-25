@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +20,7 @@ import (
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/pkg/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/cobra"
@@ -65,6 +68,62 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	defer shutdownRuntime()
 
 	tui.SetRuntime(p2pHost, agentManager, listingService, orderService)
+	tui.SetWallet(deriveWalletAddress(cfg.Ethereum.PrivateKey))
+
+	// Redirect stdout into the TUI log panel.
+	origStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	if pipeErr == nil {
+		os.Stdout = w
+		tui.SetOutput(origStdout)
+		go func() {
+			scanner := bufio.NewScanner(r)
+			for scanner.Scan() {
+				tui.SendLog(scanner.Text())
+			}
+		}()
+	}
+
+	// If --name is provided, run the full agent lifecycle (like `start`).
+	name, _ := cmd.Flags().GetString("name")
+	if name != "" {
+		ipfsReadyCID, err := publishNodePresence(ctx)
+		if err != nil {
+			fmt.Printf("warning: failed to publish IPFS presence: %v\n", err)
+		} else {
+			fmt.Printf("Node Presence CID: %s\n", ipfsReadyCID)
+		}
+
+		registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
+		if err != nil {
+			return err
+		}
+
+		if listingService != nil {
+			listingService.UpsertLocalListing(listingMsg)
+		}
+
+		apiPort, _ := cmd.Flags().GetInt("api-port")
+		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost)
+		if err := apiServer.Start(); err != nil {
+			fmt.Printf("warning: failed to start API server: %v\n", err)
+		} else {
+			fmt.Printf("HTTP API server running on port %d\n", apiPort)
+		}
+
+		announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+		if announceInterval < 5*time.Second {
+			announceInterval = 5 * time.Second
+		}
+		go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
+			msg := *listingMsg
+			msg.Type = "update"
+			msg.Timestamp = ts
+			return &msg
+		})
+
+		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.ID)
+	}
 
 	fmt.Println("Starting Betar TUI...")
 	printRuntimeInfo()
@@ -187,6 +246,19 @@ func init() {
 
 	// Wallet balance flags
 	walletBalanceCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
+
+	// TUI flags — same as startCmd but all optional
+	rootCmd.Flags().IntP("port", "p", 4001, "Port to listen on")
+	rootCmd.Flags().StringSlice("bootstrap", []string{}, "Bootstrap peers")
+	rootCmd.Flags().String("model", "gemini-2.5-flash", "ADK model name")
+	rootCmd.Flags().StringP("name", "n", "", "Agent name (optional; registers agent on startup if set)")
+	rootCmd.Flags().StringP("description", "d", "", "Agent description")
+	rootCmd.Flags().Float64P("price", "r", 0, "Price per task")
+	rootCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
+	rootCmd.Flags().String("framework", "adk", "Agent framework")
+	rootCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
+	rootCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
+	rootCmd.Flags().Int("api-port", 8424, "HTTP API server port")
 
 	// Add commands
 	rootCmd.AddCommand(nodeCmd)
@@ -473,6 +545,23 @@ func runListingAnnouncer(ctx context.Context, interval time.Duration, next func(
 			}
 		}
 	}
+}
+
+// deriveWalletAddress derives the Ethereum address hex from a private key hex string.
+// Returns empty string if the key is not set or invalid.
+func deriveWalletAddress(privKeyHex string) string {
+	if privKeyHex == "" {
+		return ""
+	}
+	pk, err := crypto.HexToECDSA(privKeyHex)
+	if err != nil {
+		return ""
+	}
+	pub, ok := pk.Public().(*ecdsa.PublicKey)
+	if !ok {
+		return ""
+	}
+	return crypto.PubkeyToAddress(*pub).Hex()
 }
 
 func printRuntimeInfo() {
