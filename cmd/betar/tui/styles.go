@@ -16,4 +16,16 @@ var (
 
 	InputStyle = lipgloss.NewStyle().
 			Foreground(PrimaryColor)
+
+	SuggestionStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#555555")).
+			Padding(0, 1)
+
+	SuggestionHighlightStyle = lipgloss.NewStyle().
+					Foreground(PrimaryColor).
+					Bold(true)
+
+	GhostStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#555555"))
 )

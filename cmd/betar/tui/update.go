@@ -149,6 +149,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connectedPeers = msg.connectedPeers
 		m.walletAddr = msg.walletAddr
 		m.agents = msg.agents
+		m.rightViewport.SetContent(buildRightPanelContent(m))
 		return m, nil
 	case tickMsg:
 		return m, tea.Batch(fetchNodeInfo(), tickEvery5s())

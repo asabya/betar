@@ -32,6 +32,13 @@ func (m model) View() string {
 }
 
 func (m model) renderRightPanel(width, height int) string {
+	return PanelStyle.Width(width - 2).Height(height - 2).Render(m.rightViewport.View())
+}
+
+// buildRightPanelContent constructs the text content for the right panel viewport.
+// Called from Update() when node info changes so the viewport content is set
+// on the real model (not a View() copy).
+func buildRightPanelContent(m model) string {
 	peerID := m.peerID
 	if peerID == "" {
 		peerID = "(not started)"
@@ -65,8 +72,7 @@ func (m model) renderRightPanel(width, height int) string {
 		}
 	}
 
-	m.rightViewport.SetContent(content)
-	return PanelStyle.Width(width - 2).Height(height - 2).Render(m.rightViewport.View())
+	return content
 }
 
 func (m model) renderLogs(width, height int) string {
@@ -74,7 +80,38 @@ func (m model) renderLogs(width, height int) string {
 }
 
 func (m model) renderInput(width, height int) string {
-	return InputStyle.Width(width - 2).Height(height - 2).Render(m.cmdInput.View())
+	content := ""
+
+	// Render suggestion dropdown above the input if there are matches.
+	if len(m.suggestions) > 0 {
+		max := 5
+		if len(m.suggestions) < max {
+			max = len(m.suggestions)
+		}
+		var lines []string
+		for i := 0; i < max; i++ {
+			line := m.suggestions[i]
+			if i == m.suggestionIdx%max {
+				line = SuggestionHighlightStyle.Render("▶ " + line)
+			} else {
+				line = "  " + line
+			}
+			lines = append(lines, line)
+		}
+		content += SuggestionStyle.Width(width - 6).Render(strings.Join(lines, "\n")) + "\n"
+	}
+
+	// Render the input with optional ghost text suffix.
+	inputView := m.cmdInput.View()
+	if len(m.suggestions) > 0 {
+		ghost := strings.TrimPrefix(m.suggestions[m.suggestionIdx%len(m.suggestions)], m.cmdInput.Value())
+		if ghost != "" {
+			inputView += GhostStyle.Render(ghost)
+		}
+	}
+	content += inputView
+
+	return InputStyle.Width(width - 2).Height(height - 2).Render(content)
 }
 
 func formatAddrs(addrs []string) string {
