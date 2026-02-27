@@ -58,7 +58,7 @@ type runtimeAgent struct {
 // NewADKRuntime creates a runtime wrapper.
 func NewADKRuntime(cfg ADKConfig) (*ADKRuntime, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("GOOGLE_API_KEY is required for ADK runtime")
+		return nil, fmt.Errorf("API key is required for ADK runtime")
 	}
 	if strings.TrimSpace(cfg.ModelName) == "" {
 		cfg.ModelName = "gemini-2.5-flash"

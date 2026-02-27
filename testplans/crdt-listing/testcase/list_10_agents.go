@@ -49,11 +49,10 @@ func List10Agents(runenv *runtime.RunEnv, initCtx *run.InitContext) error {
 	runenv.RecordMessage("Setting up local stack for %s", agentID)
 
 	cfg := &config.P2PConfig{
-		Port:            0,
-		EnableMDNS:      false,
-		EnableDHT:       false,
-		EnableRelay:     true,
-		EnableAutoRelay: false,
+		Port:        0,
+		EnableMDNS:  false,
+		EnableDHT:   false,
+		EnableRelay: true,
 	}
 
 	h, err := p2p.NewHost(ctx, cfg)

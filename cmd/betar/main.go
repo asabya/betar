@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/asabya/betar/cmd/betar/api"
+	"github.com/asabya/betar/cmd/betar/tui"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
 	"github.com/asabya/betar/internal/eth"
@@ -18,6 +22,8 @@ import (
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/pkg/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +48,7 @@ var rootCmd = &cobra.Command{
 	Use:   "betar",
 	Short: "P2P Agent 2 Agent Marketplace",
 	Long:  "A decentralized marketplace where AI agents can discover, list, and transact with each other",
+	RunE:  runTUI,
 }
 
 var nodeCmd = &cobra.Command{
@@ -54,6 +61,78 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start node, agent, and marketplace in one process",
 	RunE:  runStart,
+}
+
+func runTUI(cmd *cobra.Command, args []string) error {
+	if err := initRuntime(cmd); err != nil {
+		return err
+	}
+	defer shutdownRuntime()
+
+	tui.SetRuntime(p2pHost, agentManager, listingService, orderService)
+	tui.SetWallet(deriveWalletAddress(cfg.Ethereum.PrivateKey))
+	tui.SetDataDir(cfg.Storage.DataDir)
+
+	// Redirect stdout into the TUI log panel.
+	origStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	if pipeErr == nil {
+		os.Stdout = w
+		tui.SetOutput(origStdout)
+		go func() {
+			scanner := bufio.NewScanner(r)
+			for scanner.Scan() {
+				tui.SendLog(scanner.Text())
+			}
+		}()
+	}
+
+	// If --name is provided, run the full agent lifecycle (like `start`).
+	name, _ := cmd.Flags().GetString("name")
+	if name != "" {
+		registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
+		if err != nil {
+			return err
+		}
+
+		if listingService != nil {
+			listingService.UpsertLocalListing(listingMsg)
+			if data, err := json.Marshal(listingMsg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
+		}
+
+		apiPort, _ := cmd.Flags().GetInt("api-port")
+		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService)
+		if err := apiServer.Start(); err != nil {
+			fmt.Printf("warning: failed to start API server: %v\n", err)
+		} else {
+			fmt.Printf("HTTP API server running on port %d\n", apiPort)
+		}
+
+		announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+		if announceInterval < 5*time.Second {
+			announceInterval = 5 * time.Second
+		}
+		go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
+			msg := *listingMsg
+			msg.Type = "update"
+			msg.Timestamp = ts
+			return &msg
+		})
+
+		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.AgentID)
+	}
+
+	fmt.Println("Starting Betar TUI...")
+	printRuntimeInfo()
+
+	tuiErr := tui.RunTUI()
+	if pipeErr == nil {
+		_ = w.Close()
+		os.Stdout = origStdout
+	}
+	return tuiErr
 }
 
 var agentCmd = &cobra.Command{
@@ -168,6 +247,19 @@ func init() {
 	// Wallet balance flags
 	walletBalanceCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
 
+	// TUI flags — same as startCmd but all optional
+	rootCmd.Flags().IntP("port", "p", 4001, "Port to listen on")
+	rootCmd.Flags().StringSlice("bootstrap", []string{}, "Bootstrap peers")
+	rootCmd.Flags().String("model", "gemini-2.5-flash", "ADK model name")
+	rootCmd.Flags().StringP("name", "n", "", "Agent name (optional; registers agent on startup if set)")
+	rootCmd.Flags().StringP("description", "d", "", "Agent description")
+	rootCmd.Flags().Float64P("price", "r", 0, "Price per task")
+	rootCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
+	rootCmd.Flags().String("framework", "adk", "Agent framework")
+	rootCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
+	rootCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
+	rootCmd.Flags().Int("api-port", 8424, "HTTP API server port")
+
 	// Add commands
 	rootCmd.AddCommand(nodeCmd)
 	rootCmd.AddCommand(startCmd)
@@ -235,9 +327,9 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	if listingService != nil {
-		listingService.UpsertLocalListing(&types.AgentListingMessage{
+		serveMsg := &types.AgentListingMessage{
 			Type:      "list",
-			AgentID:   registered.ID,
+			AgentID:   registered.AgentID,
 			Name:      registered.Name,
 			Price:     registered.Price,
 			Metadata:  registered.MetadataCID,
@@ -245,7 +337,11 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 			Addrs:     p2pHost.AddrStrings(),
 			Protocols: []string{p2p.X402ProtocolID},
 			Timestamp: time.Now().Unix(),
-		})
+		}
+		listingService.UpsertLocalListing(serveMsg)
+		if data, err := json.Marshal(serveMsg); err == nil {
+			_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+		}
 	}
 
 	fmt.Println("P2P Agent Serving")
@@ -264,11 +360,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	defer shutdownRuntime()
 
-	ipfsReadyCID, err := publishNodePresence(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to initialize IPFS presence: %w", err)
-	}
-
 	registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
 	if err != nil {
 		return err
@@ -276,6 +367,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	if listingService != nil {
 		listingService.UpsertLocalListing(listingMsg)
+		if data, err := json.Marshal(listingMsg); err == nil {
+			_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+		}
 	}
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
@@ -314,10 +408,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Betar Started (single process)")
 	printRuntimeInfo()
-	fmt.Printf("Agent ID: %s\n", registered.ID)
+	fmt.Printf("Agent ID: %s\n", registered.AgentID)
 	fmt.Printf("Agent Name: %s\n", registered.Name)
 	fmt.Printf("Metadata CID: %s\n", registered.MetadataCID)
-	fmt.Printf("Node Presence CID: %s\n", ipfsReadyCID)
 	fmt.Println("Marketplace mode: CRDT directory + direct stream RPC")
 	waitForShutdown()
 	return nil
@@ -405,32 +498,44 @@ func initRuntime(cmd *cobra.Command) error {
 	// Wire up the x402 stream handler so the agent manager can serve /x402/libp2p/1.0.0 requests.
 	agentManager.RegisterX402Handlers(x402StreamHandler)
 
+	// Register "info" handler on the basic marketplace stream handler.
+	agentManager.RegisterStreamHandlers(streamHandler)
+
+	// Start GossipSub listener for remote agent announcements.
+	listingService.StartAnnouncementListener(ctx, p2pPubSub)
+
+	// Pull listings from every newly-connected peer via the "info" stream.
+	p2pHost.RawHost().Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(_ network.Network, c network.Conn) {
+			go func() {
+				resp, err := streamHandler.SendMessage(ctx, c.RemotePeer(), "info", nil)
+				if err != nil {
+					return
+				}
+				var listings []*types.AgentListing
+				if json.Unmarshal(resp, &listings) != nil {
+					return
+				}
+				for _, l := range listings {
+					listingService.UpsertLocalListing(&types.AgentListingMessage{
+						Type:      "list",
+						AgentID:   l.ID,
+						Name:      l.Name,
+						Price:     l.Price,
+						Metadata:  l.Metadata,
+						SellerID:  l.SellerID,
+						Addrs:     l.Addrs,
+						Protocols: l.Protocols,
+						Timestamp: l.Timestamp,
+					})
+				}
+			}()
+		},
+	})
+
 	orderService = marketplace.NewOrderService(streamHandler, p2pHost, p2pHost.ID())
 
 	return nil
-}
-
-func publishNodePresence(ctx context.Context) (string, error) {
-	if ipfsClient == nil || p2pHost == nil {
-		return "", fmt.Errorf("runtime not initialized")
-	}
-
-	presence := map[string]interface{}{
-		"kind":      "node-presence",
-		"peerId":    p2pHost.ID().String(),
-		"addresses": p2pHost.AddrStrings(),
-		"timestamp": time.Now().Unix(),
-	}
-
-	cid, err := ipfsClient.AddJSON(ctx, presence)
-	if err != nil {
-		return "", err
-	}
-	if err := ipfsClient.Pin(ctx, cid); err != nil {
-		return "", err
-	}
-
-	return cid, nil
 }
 
 func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agent.LocalAgent, *types.AgentListingMessage, error) {
@@ -462,7 +567,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 
 	listing := &types.AgentListingMessage{
 		Type:      "list",
-		AgentID:   registered.ID,
+		AgentID:   registered.AgentID,
 		Name:      registered.Name,
 		Price:     registered.Price,
 		Metadata:  registered.MetadataCID,
@@ -491,8 +596,28 @@ func runListingAnnouncer(ctx context.Context, interval time.Duration, next func(
 			if err := listingService.UpdateListing(ctx, msg); err != nil && !errors.Is(err, context.Canceled) {
 				fmt.Printf("warning: failed to republish listing: %v\n", err)
 			}
+			if data, err := json.Marshal(msg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
 		}
 	}
+}
+
+// deriveWalletAddress derives the Ethereum address hex from a private key hex string.
+// Returns empty string if the key is not set or invalid.
+func deriveWalletAddress(privKeyHex string) string {
+	if privKeyHex == "" {
+		return ""
+	}
+	pk, err := crypto.HexToECDSA(privKeyHex)
+	if err != nil {
+		return ""
+	}
+	pub, ok := pk.Public().(*ecdsa.PublicKey)
+	if !ok {
+		return ""
+	}
+	return crypto.PubkeyToAddress(*pub).Hex()
 }
 
 func printRuntimeInfo() {
@@ -561,7 +686,7 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Agent registered successfully")
-	fmt.Printf("Agent ID: %s\n", agent.ID)
+	fmt.Printf("Agent ID: %s\n", agent.AgentID)
 	fmt.Printf("Name: %s\n", agent.Name)
 	fmt.Printf("Price: %f ETH\n", agent.Price)
 

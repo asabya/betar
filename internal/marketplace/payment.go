@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +72,7 @@ func NewPaymentService(wallet *eth.Wallet, paymentAddr string) *PaymentService {
 		wallet:         wallet,
 		paymentAddr:    paymentAddr,
 		network:        NetworkBaseSepolia,
-		facilitator:    FacilitatorURL,
+		facilitator:    getEnv("FACILITATOR_URL", FacilitatorURL),
 		verifier:       NewPaymentVerifier(NetworkBaseSepolia),
 		challengeStore: newChallengeStore(),
 	}
@@ -713,4 +714,11 @@ func ParsePayment(data []byte) (*PaymentHeader, error) {
 
 func (p *PaymentHeader) ToJSON() ([]byte, error) {
 	return json.Marshal(p)
+}
+
+func getEnv(key, defaultValue string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultValue
 }

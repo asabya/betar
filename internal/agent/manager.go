@@ -370,6 +370,15 @@ func (m *Manager) RegisterX402Handlers(sh *p2p.X402StreamHandler) {
 	sh.RegisterHandler(marketplace.MsgTypeX402PaidRequest, m.handleX402PaidRequest)
 }
 
+// RegisterStreamHandlers registers marketplace stream handlers on the basic StreamHandler.
+// Currently registers an "info" handler that returns all known local listings as JSON.
+func (m *Manager) RegisterStreamHandlers(sh *p2p.StreamHandler) {
+	sh.RegisterHandler("info", func(ctx context.Context, from peer.ID, _ []byte) ([]byte, error) {
+		listings := m.listingService.ListListings()
+		return json.Marshal(listings)
+	})
+}
+
 // handleX402Request is the server-side handler for x402.request messages.
 // If the agent requires payment and the request carries no payment, it issues a challenge nonce
 // and returns x402.payment_required. If payment is already attached (preemptive), it is

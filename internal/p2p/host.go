@@ -7,6 +7,7 @@ import (
 
 	"github.com/asabya/betar/internal/config"
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -24,16 +25,25 @@ type Host struct {
 func NewHost(ctx context.Context, cfg *config.P2PConfig) (*Host, error) {
 	// Parse bootstrap peers
 	var bootstrapPeers []peer.AddrInfo
-	for _, addrStr := range cfg.BootstrapPeers {
-		addr, err := multiaddr.NewMultiaddr(addrStr)
-		if err != nil {
-			continue
+
+	if len(cfg.BootstrapPeers) > 0 {
+		for _, addrStr := range cfg.BootstrapPeers {
+			addr, err := multiaddr.NewMultiaddr(addrStr)
+			if err != nil {
+				continue
+			}
+			pi, err := peer.AddrInfoFromP2pAddr(addr)
+			if err != nil {
+				continue
+			}
+			bootstrapPeers = append(bootstrapPeers, *pi)
 		}
-		pi, err := peer.AddrInfoFromP2pAddr(addr)
-		if err != nil {
-			continue
+	} else {
+		bootstrapAddrs := dht.DefaultBootstrapPeers
+		for _, addr := range bootstrapAddrs {
+			pi, _ := peer.AddrInfoFromP2pAddr(addr)
+			bootstrapPeers = append(bootstrapPeers, *pi)
 		}
-		bootstrapPeers = append(bootstrapPeers, *pi)
 	}
 
 	// Build libp2p options
@@ -50,9 +60,6 @@ func NewHost(ctx context.Context, cfg *config.P2PConfig) (*Host, error) {
 
 	if cfg.EnableRelay {
 		opts = append(opts, libp2p.EnableRelay())
-	}
-	if cfg.EnableAutoRelay {
-		opts = append(opts, libp2p.EnableAutoRelay())
 	}
 
 	// Add private key if provided
