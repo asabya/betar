@@ -42,8 +42,10 @@ type model struct {
 	peerID         string
 	addresses      []string
 	connectedPeers int
-	walletAddr     string
-	agents         []agentInfo
+	walletAddr       string
+	dataDir          string
+	agents           []agentInfo
+	discoveredAgents []agentInfo
 
 	// suggestions holds the current autocomplete matches; wired in autocomplete task.
 	suggestions   []string

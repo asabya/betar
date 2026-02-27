@@ -35,7 +35,36 @@ Binary is created at `bin/betar`.
 
 ## Quickstart: Run a P2P agent node
 
-Use one command to start node + agent + IPFS publication + CRDT marketplace listing:
+Betar launches in an interactive TUI (Text User Interface) by default:
+
+```bash
+bin/betar
+```
+
+The TUI provides a 3-panel layout:
+- **Left Top**: Log output
+- **Left Bottom**: Command input (type `/help` for available commands)
+- **Right**: Node status and tasks
+
+### TUI Commands
+
+Available commands in the TUI input:
+- `/help` - Show available commands
+- `/start` - Start a node with agent (same flags as CLI)
+- `/status` - Show node status
+- `/peers` - List connected peers
+- `/agent list` - List registered agents
+- `/agent discover` - Discover agents from marketplace
+- `/exit` - Exit the TUI
+
+To start a node with an agent from the TUI:
+```
+/start --name "math-agent" --description "Performs math tasks" --price 0.001 --endpoint "p2p://math-agent" --port 4001 --model "gemini-2.5-flash"
+```
+
+### CLI mode
+
+Run without TUI using the `start` command directly:
 
 ```bash
 bin/betar start \

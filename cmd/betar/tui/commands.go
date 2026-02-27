@@ -15,6 +15,7 @@ var (
 	runtimeListingService *marketplace.AgentListingService
 	runtimeOrderService   *marketplace.OrderService
 	runtimeWalletAddr     string
+	runtimeDataDir        string
 )
 
 // knownCommands is the list used for autocomplete suggestions.
@@ -179,4 +180,13 @@ func SetWallet(addr string) {
 
 func getWalletAddr() string {
 	return runtimeWalletAddr
+}
+
+// SetDataDir sets the data directory path for display in the TUI.
+func SetDataDir(dir string) {
+	runtimeDataDir = dir
+}
+
+func getDataDir() string {
+	return runtimeDataDir
 }

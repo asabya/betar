@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -11,11 +12,13 @@ import (
 type logMsg string
 
 type nodeInfoMsg struct {
-	peerID         string
-	addresses      []string
-	connectedPeers int
-	walletAddr     string
-	agents         []agentInfo
+	peerID           string
+	addresses        []string
+	connectedPeers   int
+	walletAddr       string
+	dataDir          string
+	agents           []agentInfo
+	discoveredAgents []agentInfo
 }
 
 type tickMsg time.Time
@@ -34,6 +37,8 @@ func fetchNodeInfo() tea.Cmd {
 		}
 		peers := h.RawHost().Network().Peers()
 
+		localPeerID := h.ID().String()
+
 		var agents []agentInfo
 		if mgr := getAgentManager(); mgr != nil {
 			for _, a := range mgr.ListAgents() {
@@ -41,12 +46,25 @@ func fetchNodeInfo() tea.Cmd {
 			}
 		}
 
+		var discoveredAgents []agentInfo
+		if ls := getListingService(); ls != nil {
+			listings, _ := ls.DiscoverAgents(context.Background())
+			for _, l := range listings {
+				if l == nil || l.SellerID == localPeerID {
+					continue
+				}
+				discoveredAgents = append(discoveredAgents, agentInfo{Name: l.Name, DID: l.ID})
+			}
+		}
+
 		return nodeInfoMsg{
-			peerID:         h.ID().String(),
-			addresses:      h.AddrStrings(),
-			connectedPeers: len(peers),
-			walletAddr:     getWalletAddr(),
-			agents:         agents,
+			peerID:           localPeerID,
+			addresses:        h.AddrStrings(),
+			connectedPeers:   len(peers),
+			walletAddr:       getWalletAddr(),
+			dataDir:          getDataDir(),
+			agents:           agents,
+			discoveredAgents: discoveredAgents,
 		}
 	}
 }
@@ -151,7 +169,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addresses = msg.addresses
 		m.connectedPeers = msg.connectedPeers
 		m.walletAddr = msg.walletAddr
+		m.dataDir = msg.dataDir
 		m.agents = msg.agents
+		m.discoveredAgents = msg.discoveredAgents
 		m.rightViewport.SetContent(buildRightPanelContent(m))
 		return m, nil
 	case tickMsg:

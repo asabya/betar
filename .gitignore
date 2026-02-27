@@ -8,3 +8,4 @@ coverage.out
 contracts/lib/
 contracts/cache/
 contracts/out/
+dev/

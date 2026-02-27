@@ -24,15 +24,14 @@ type Config struct {
 
 // P2PConfig holds P2P configuration
 type P2PConfig struct {
-	Port            int
-	BootstrapPeers  []string
-	EnableMDNS      bool
-	EnableDHT       bool
-	EnableRelay     bool
-	EnableAutoRelay bool
-	PrivKey         p2pcrypto.PrivKey
-	MinConnections  int
-	MaxConnections  int
+	Port           int
+	BootstrapPeers []string
+	EnableMDNS     bool
+	EnableDHT      bool
+	EnableRelay    bool
+	PrivKey        p2pcrypto.PrivKey
+	MinConnections int
+	MaxConnections int
 }
 
 // IPFSConfig holds IPFS configuration
@@ -65,13 +64,12 @@ type StorageConfig struct {
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		P2P: &P2PConfig{
-			Port:            4001,
-			EnableMDNS:      true,
-			EnableDHT:       true,
-			EnableRelay:     getEnv("P2P_ENABLE_RELAY", "true") != "false",
-			EnableAutoRelay: getEnv("P2P_ENABLE_AUTO_RELAY", "true") != "false",
-			MinConnections:  2,
-			MaxConnections:  10,
+			Port:           4001,
+			EnableMDNS:     true,
+			EnableDHT:      true,
+			EnableRelay:    getEnv("P2P_ENABLE_RELAY", "true") != "false",
+			MinConnections: 2,
+			MaxConnections: 10,
 		},
 		IPFS: &IPFSConfig{
 			APIURL: getEnv("IPFS_API_URL", "http://localhost:5001"),

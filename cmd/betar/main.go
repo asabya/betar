@@ -69,6 +69,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 
 	tui.SetRuntime(p2pHost, agentManager, listingService, orderService)
 	tui.SetWallet(deriveWalletAddress(cfg.Ethereum.PrivateKey))
+	tui.SetDataDir(cfg.Storage.DataDir)
 
 	// Redirect stdout into the TUI log panel.
 	origStdout := os.Stdout
@@ -87,13 +88,6 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// If --name is provided, run the full agent lifecycle (like `start`).
 	name, _ := cmd.Flags().GetString("name")
 	if name != "" {
-		ipfsReadyCID, err := publishNodePresence(ctx)
-		if err != nil {
-			fmt.Printf("warning: failed to publish IPFS presence: %v\n", err)
-		} else {
-			fmt.Printf("Node Presence CID: %s\n", ipfsReadyCID)
-		}
-
 		registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
 		if err != nil {
 			return err
@@ -122,7 +116,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 			return &msg
 		})
 
-		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.ID)
+		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.AgentID)
 	}
 
 	fmt.Println("Starting Betar TUI...")
@@ -330,7 +324,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	if listingService != nil {
 		listingService.UpsertLocalListing(&types.AgentListingMessage{
 			Type:      "list",
-			AgentID:   registered.ID,
+			AgentID:   registered.AgentID,
 			Name:      registered.Name,
 			Price:     registered.Price,
 			Metadata:  registered.MetadataCID,
@@ -356,11 +350,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer shutdownRuntime()
-
-	ipfsReadyCID, err := publishNodePresence(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to initialize IPFS presence: %w", err)
-	}
 
 	registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
 	if err != nil {
@@ -407,10 +396,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Betar Started (single process)")
 	printRuntimeInfo()
-	fmt.Printf("Agent ID: %s\n", registered.ID)
+	fmt.Printf("Agent ID: %s\n", registered.AgentID)
 	fmt.Printf("Agent Name: %s\n", registered.Name)
 	fmt.Printf("Metadata CID: %s\n", registered.MetadataCID)
-	fmt.Printf("Node Presence CID: %s\n", ipfsReadyCID)
 	fmt.Println("Marketplace mode: CRDT directory + direct stream RPC")
 	waitForShutdown()
 	return nil
@@ -503,29 +491,6 @@ func initRuntime(cmd *cobra.Command) error {
 	return nil
 }
 
-func publishNodePresence(ctx context.Context) (string, error) {
-	if ipfsClient == nil || p2pHost == nil {
-		return "", fmt.Errorf("runtime not initialized")
-	}
-
-	presence := map[string]interface{}{
-		"kind":      "node-presence",
-		"peerId":    p2pHost.ID().String(),
-		"addresses": p2pHost.AddrStrings(),
-		"timestamp": time.Now().Unix(),
-	}
-
-	cid, err := ipfsClient.AddJSON(ctx, presence)
-	if err != nil {
-		return "", err
-	}
-	if err := ipfsClient.Pin(ctx, cid); err != nil {
-		return "", err
-	}
-
-	return cid, nil
-}
-
 func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agent.LocalAgent, *types.AgentListingMessage, error) {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
@@ -555,7 +520,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 
 	listing := &types.AgentListingMessage{
 		Type:      "list",
-		AgentID:   registered.ID,
+		AgentID:   registered.AgentID,
 		Name:      registered.Name,
 		Price:     registered.Price,
 		Metadata:  registered.MetadataCID,
@@ -671,7 +636,7 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Agent registered successfully")
-	fmt.Printf("Agent ID: %s\n", agent.ID)
+	fmt.Printf("Agent ID: %s\n", agent.AgentID)
 	fmt.Printf("Name: %s\n", agent.Name)
 	fmt.Printf("Price: %f ETH\n", agent.Price)
 

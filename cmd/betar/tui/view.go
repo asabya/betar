@@ -47,18 +47,32 @@ func buildRightPanelContent(m model) string {
 	if walletAddr == "" {
 		walletAddr = "(none)"
 	}
+	dataDir := m.dataDir
+	if dataDir == "" {
+		dataDir = "(unknown)"
+	}
 
 	content := TitleStyle.Render("Node Status") + "\n"
 	content += "PeerID: " + peerID + "\n"
 	content += "Addrs:  " + formatAddrs(m.addresses) + "\n"
 	content += fmt.Sprintf("Peers:  %d\n", m.connectedPeers)
 	content += "Wallet: " + walletAddr + "\n"
+	content += "Data:   " + dataDir + "\n"
 
 	content += "\n" + TitleStyle.Render("Local Agents") + "\n"
 	if len(m.agents) == 0 {
 		content += "  (none)\n"
 	} else {
 		for _, a := range m.agents {
+			content += fmt.Sprintf("  %s\n  %s\n\n", a.Name, a.DID)
+		}
+	}
+
+	content += "\n" + TitleStyle.Render("Network Agents") + "\n"
+	if len(m.discoveredAgents) == 0 {
+		content += "  (none)\n"
+	} else {
+		for _, a := range m.discoveredAgents {
 			content += fmt.Sprintf("  %s\n  %s\n\n", a.Name, a.DID)
 		}
 	}
@@ -98,7 +112,7 @@ func (m model) renderInput(width, height int) string {
 			}
 			lines = append(lines, line)
 		}
-		content += SuggestionStyle.Width(width - 6).Render(strings.Join(lines, "\n")) + "\n"
+		content += SuggestionStyle.Width(width-6).Render(strings.Join(lines, "\n")) + "\n"
 	}
 
 	// Render the input with optional ghost text suffix.
