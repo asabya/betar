@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/pkg/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/spf13/cobra"
 )
 
@@ -95,6 +97,9 @@ func runTUI(cmd *cobra.Command, args []string) error {
 
 		if listingService != nil {
 			listingService.UpsertLocalListing(listingMsg)
+			if data, err := json.Marshal(listingMsg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
 		}
 
 		apiPort, _ := cmd.Flags().GetInt("api-port")
@@ -322,7 +327,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	if listingService != nil {
-		listingService.UpsertLocalListing(&types.AgentListingMessage{
+		serveMsg := &types.AgentListingMessage{
 			Type:      "list",
 			AgentID:   registered.AgentID,
 			Name:      registered.Name,
@@ -332,7 +337,11 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 			Addrs:     p2pHost.AddrStrings(),
 			Protocols: []string{p2p.X402ProtocolID},
 			Timestamp: time.Now().Unix(),
-		})
+		}
+		listingService.UpsertLocalListing(serveMsg)
+		if data, err := json.Marshal(serveMsg); err == nil {
+			_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+		}
 	}
 
 	fmt.Println("P2P Agent Serving")
@@ -358,6 +367,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	if listingService != nil {
 		listingService.UpsertLocalListing(listingMsg)
+		if data, err := json.Marshal(listingMsg); err == nil {
+			_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+		}
 	}
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
@@ -486,6 +498,41 @@ func initRuntime(cmd *cobra.Command) error {
 	// Wire up the x402 stream handler so the agent manager can serve /x402/libp2p/1.0.0 requests.
 	agentManager.RegisterX402Handlers(x402StreamHandler)
 
+	// Register "info" handler on the basic marketplace stream handler.
+	agentManager.RegisterStreamHandlers(streamHandler)
+
+	// Start GossipSub listener for remote agent announcements.
+	listingService.StartAnnouncementListener(ctx, p2pPubSub)
+
+	// Pull listings from every newly-connected peer via the "info" stream.
+	p2pHost.RawHost().Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(_ network.Network, c network.Conn) {
+			go func() {
+				resp, err := streamHandler.SendMessage(ctx, c.RemotePeer(), "info", nil)
+				if err != nil {
+					return
+				}
+				var listings []*types.AgentListing
+				if json.Unmarshal(resp, &listings) != nil {
+					return
+				}
+				for _, l := range listings {
+					listingService.UpsertLocalListing(&types.AgentListingMessage{
+						Type:      "list",
+						AgentID:   l.ID,
+						Name:      l.Name,
+						Price:     l.Price,
+						Metadata:  l.Metadata,
+						SellerID:  l.SellerID,
+						Addrs:     l.Addrs,
+						Protocols: l.Protocols,
+						Timestamp: l.Timestamp,
+					})
+				}
+			}()
+		},
+	})
+
 	orderService = marketplace.NewOrderService(streamHandler, p2pHost, p2pHost.ID())
 
 	return nil
@@ -548,6 +595,9 @@ func runListingAnnouncer(ctx context.Context, interval time.Duration, next func(
 			msg := next(t.Unix())
 			if err := listingService.UpdateListing(ctx, msg); err != nil && !errors.Is(err, context.Canceled) {
 				fmt.Printf("warning: failed to republish listing: %v\n", err)
+			}
+			if data, err := json.Marshal(msg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
 			}
 		}
 	}

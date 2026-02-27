@@ -2,6 +2,7 @@ package marketplace
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -32,6 +33,28 @@ func NewAgentListingService(ctx context.Context, ipfsClient *ipfs.Client, p2pPub
 	}
 
 	return s, nil
+}
+
+// StartAnnouncementListener subscribes to the AnnounceTopic GossipSub topic and
+// applies any received AgentListingMessage to the local CRDT.
+func (s *AgentListingService) StartAnnouncementListener(ctx context.Context, ps *p2p.PubSub) {
+	go func() {
+		sub, err := ps.Subscribe(ctx, AnnounceTopic)
+		if err != nil {
+			return
+		}
+		defer sub.Cancel()
+		for {
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				return
+			}
+			var listing types.AgentListingMessage
+			if json.Unmarshal(msg.Data, &listing) == nil {
+				_ = s.handleAgentListingMessage(ctx, &listing)
+			}
+		}
+	}()
 }
 
 // handleAgentListingSubscription handles incoming agent listing messages

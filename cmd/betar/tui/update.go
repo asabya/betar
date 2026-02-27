@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -22,6 +23,25 @@ type nodeInfoMsg struct {
 }
 
 type tickMsg time.Time
+
+type executeResultMsg struct {
+	agentID string
+	output  string
+	err     error
+}
+
+func executeTaskCmd(agentID, task string) tea.Cmd {
+	return func() tea.Msg {
+		mgr := getAgentManager()
+		if mgr == nil {
+			return executeResultMsg{agentID: agentID, err: fmt.Errorf("agent manager not initialized")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		output, err := mgr.ExecuteTask(ctx, agentID, task)
+		return executeResultMsg{agentID: agentID, output: output, err: err}
+	}
+}
 
 func waitForLog() tea.Cmd {
 	return func() tea.Msg {
@@ -176,6 +196,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		return m, tea.Batch(fetchNodeInfo(), tickEvery5s())
+	case executeResultMsg:
+		if msg.err != nil {
+			m.logs = append(m.logs, fmt.Sprintf("[%s] error: %v", msg.agentID, msg.err))
+		} else {
+			m.logs = append(m.logs, fmt.Sprintf("[%s] output: %s", msg.agentID, msg.output))
+		}
+		if len(m.logs) > 100 {
+			m.logs = m.logs[len(m.logs)-100:]
+		}
+		m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
+		m.logsViewport.GotoBottom()
+		return m, nil
 	}
 
 	m.cmdInput, cmd = m.cmdInput.Update(msg)
@@ -204,8 +236,27 @@ func (m model) handleCommand() (model, tea.Cmd) {
 	m.historyIndex = len(m.cmdHistory)
 
 	m.logs = append(m.logs, "> "+cmd)
-	result := processCommand(cmd)
-	m.logs = append(m.logs, result...)
+
+	// Async: intercept /agent execute before processCommand
+	if strings.HasPrefix(cmd, "/agent execute ") {
+		args := strings.TrimPrefix(cmd, "/agent execute ")
+		parts := strings.SplitN(args, " ", 2)
+		if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+			m.logs = append(m.logs, "Usage: /agent execute <agent-id> <task>")
+		} else {
+			agentID, task := parts[0], parts[1]
+			m.logs = append(m.logs, fmt.Sprintf("Executing task on agent %s...", agentID))
+			if len(m.logs) > 100 {
+				m.logs = m.logs[len(m.logs)-100:]
+			}
+			m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
+			m.logsViewport.GotoBottom()
+			return m, executeTaskCmd(agentID, task)
+		}
+	} else {
+		result := processCommand(cmd)
+		m.logs = append(m.logs, result...)
+	}
 
 	if len(m.logs) > 100 {
 		m.logs = m.logs[len(m.logs)-100:]
