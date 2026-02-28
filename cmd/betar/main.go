@@ -170,6 +170,37 @@ var agentExecuteCmd = &cobra.Command{
 	RunE:  executeAgent,
 }
 
+var agentConfigCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Manage agent configurations",
+}
+
+var agentConfigListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List configured agent profiles",
+	RunE:  agentConfigList,
+}
+
+var agentConfigAddCmd = &cobra.Command{
+	Use:   "add",
+	Short: "Add a new agent profile",
+	RunE:  agentConfigAdd,
+}
+
+var agentConfigDeleteCmd = &cobra.Command{
+	Use:   "delete <name>",
+	Short: "Delete an agent profile",
+	Args:  cobra.ExactArgs(1),
+	RunE:  agentConfigDelete,
+}
+
+var agentConfigEditCmd = &cobra.Command{
+	Use:   "edit <name>",
+	Short: "Edit an agent profile",
+	Args:  cobra.ExactArgs(1),
+	RunE:  agentConfigEdit,
+}
+
 var orderCmd = &cobra.Command{
 	Use:   "order",
 	Short: "Manage orders",
@@ -220,7 +251,7 @@ func init() {
 	startCmd.Flags().String("framework", "adk", "Agent framework")
 	startCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	startCmd.Flags().Int("api-port", 8424, "HTTP API server port")
-	_ = startCmd.MarkFlagRequired("name")
+	// --name is optional for startCmd; agents can be loaded from agents.yaml
 
 	// Agent register flags
 	agentRegisterCmd.Flags().StringP("name", "n", "", "Agent name")
@@ -243,6 +274,23 @@ func init() {
 	orderCreateCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
 	orderCreateCmd.Flags().String("agent-id", "", "Agent ID")
 	orderCreateCmd.Flags().Float64("price", 0, "Price")
+
+	// Agent config add flags
+	agentConfigAddCmd.Flags().StringP("name", "n", "", "Agent name")
+	agentConfigAddCmd.Flags().StringP("description", "d", "", "Agent description")
+	agentConfigAddCmd.Flags().Float64P("price", "r", 0, "Price per task")
+	agentConfigAddCmd.Flags().String("model", "", "ADK model name (overrides global GOOGLE_MODEL)")
+	agentConfigAddCmd.Flags().String("api-key", "", "Google API key (overrides global GOOGLE_API_KEY)")
+	agentConfigAddCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
+	agentConfigAddCmd.Flags().String("framework", "google-adk", "Agent framework")
+	_ = agentConfigAddCmd.MarkFlagRequired("name")
+
+	// Agent config edit flags
+	agentConfigEditCmd.Flags().StringP("description", "d", "", "Agent description")
+	agentConfigEditCmd.Flags().Float64P("price", "r", 0, "Price per task")
+	agentConfigEditCmd.Flags().String("model", "", "ADK model name")
+	agentConfigEditCmd.Flags().String("api-key", "", "Google API key")
+	agentConfigEditCmd.Flags().String("endpoint", "", "Agent endpoint")
 
 	// Wallet balance flags
 	walletBalanceCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -272,6 +320,8 @@ func init() {
 	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentExecuteCmd)
 	agentCmd.AddCommand(agentServeCmd)
+	agentCmd.AddCommand(agentConfigCmd)
+	agentConfigCmd.AddCommand(agentConfigListCmd, agentConfigAddCmd, agentConfigDeleteCmd, agentConfigEditCmd)
 
 	orderCmd.AddCommand(orderCreateCmd)
 	walletCmd.AddCommand(walletBalanceCmd)
@@ -344,6 +394,11 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Auto-load additional agents from agents.yaml.
+	if err := loadAndRegisterAgentsFromConfig(ctx, 30*time.Second); err != nil {
+		fmt.Printf("warning: %v\n", err)
+	}
+
 	fmt.Println("P2P Agent Serving")
 	printRuntimeInfo()
 	fmt.Printf("ID: %s\n", registered.ID)
@@ -360,16 +415,36 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	defer shutdownRuntime()
 
-	registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
-	if err != nil {
-		return err
+	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+	if announceInterval < 5*time.Second {
+		announceInterval = 5 * time.Second
 	}
 
-	if listingService != nil {
-		listingService.UpsertLocalListing(listingMsg)
-		if data, err := json.Marshal(listingMsg); err == nil {
-			_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+	// Register agent from CLI flags if --name is set.
+	name, _ := cmd.Flags().GetString("name")
+	if name != "" {
+		registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
+		if err != nil {
+			return err
 		}
+		if listingService != nil {
+			listingService.UpsertLocalListing(listingMsg)
+			if data, err := json.Marshal(listingMsg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
+		}
+		go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
+			msg := *listingMsg
+			msg.Type = "update"
+			msg.Timestamp = ts
+			return &msg
+		})
+		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.AgentID)
+	}
+
+	// Auto-load agents from agents.yaml.
+	if err := loadAndRegisterAgentsFromConfig(ctx, announceInterval); err != nil {
+		fmt.Printf("warning: %v\n", err)
 	}
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
@@ -378,18 +453,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
 	fmt.Printf("HTTP API server running on port %d\n", apiPort)
-
-	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
-	if announceInterval < 5*time.Second {
-		announceInterval = 5 * time.Second
-	}
-
-	go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
-		msg := *listingMsg
-		msg.Type = "update"
-		msg.Timestamp = ts
-		return &msg
-	})
 
 	if paymentService != nil {
 		go func() {
@@ -408,9 +471,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Betar Started (single process)")
 	printRuntimeInfo()
-	fmt.Printf("Agent ID: %s\n", registered.AgentID)
-	fmt.Printf("Agent Name: %s\n", registered.Name)
-	fmt.Printf("Metadata CID: %s\n", registered.MetadataCID)
 	fmt.Println("Marketplace mode: CRDT directory + direct stream RPC")
 	waitForShutdown()
 	return nil
@@ -787,6 +847,196 @@ func createOrder(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Buyer ID: %s\n", order.BuyerID)
 	}
 
+	return nil
+}
+
+// loadAndRegisterAgentsFromConfig reads agents.yaml and registers each profile.
+func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.Duration) error {
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return fmt.Errorf("loading agents config: %w", err)
+	}
+	if len(agentsCfg.Agents) == 0 {
+		return nil
+	}
+
+	for _, profile := range agentsCfg.Agents {
+		apiKey := profile.APIKey
+		if apiKey == "" {
+			apiKey = cfg.Agent.APIKey
+		}
+		model := profile.Model
+		if model == "" {
+			model = cfg.Agent.Model
+		}
+		endpoint := profile.Endpoint
+		if endpoint == "" {
+			endpoint = "p2p://local"
+		}
+
+		registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
+			Name:        profile.Name,
+			Description: profile.Description,
+			Endpoint:    endpoint,
+			Price:       profile.Price,
+			Framework:   profile.Framework,
+			Model:       model,
+			APIKey:      apiKey,
+			X402Support: true,
+			Services:    []types.Service{{Name: "p2p", Endpoint: endpoint}},
+		})
+		if err != nil {
+			fmt.Printf("warning: failed to register agent %q from config: %v\n", profile.Name, err)
+			continue
+		}
+
+		if listingService != nil {
+			msg := &types.AgentListingMessage{
+				Type:      "list",
+				AgentID:   registered.AgentID,
+				Name:      registered.Name,
+				Price:     registered.Price,
+				Metadata:  registered.MetadataCID,
+				SellerID:  p2pHost.ID().String(),
+				Addrs:     p2pHost.AddrStrings(),
+				Protocols: []string{p2p.X402ProtocolID},
+				Timestamp: time.Now().Unix(),
+			}
+			listingService.UpsertLocalListing(msg)
+			if data, err := json.Marshal(msg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
+			go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
+				m := *msg
+				m.Type = "update"
+				m.Timestamp = ts
+				return &m
+			})
+		}
+
+		fmt.Printf("Agent loaded from config: %s (%s)\n", registered.Name, registered.AgentID)
+	}
+	return nil
+}
+
+// agentConfigList prints all configured agent profiles.
+func agentConfigList(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	if len(agentsCfg.Agents) == 0 {
+		fmt.Println("No agent profiles configured.")
+		return nil
+	}
+	fmt.Printf("%-20s %-40s %10s  %-20s\n", "NAME", "DESCRIPTION", "PRICE", "MODEL")
+	for _, p := range agentsCfg.Agents {
+		model := p.Model
+		if model == "" {
+			model = "(global)"
+		}
+		fmt.Printf("%-20s %-40s %10.6f  %-20s\n", p.Name, p.Description, p.Price, model)
+	}
+	return nil
+}
+
+// agentConfigAdd adds a new agent profile to agents.yaml.
+func agentConfigAdd(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+
+	name, _ := cmd.Flags().GetString("name")
+	description, _ := cmd.Flags().GetString("description")
+	price, _ := cmd.Flags().GetFloat64("price")
+	model, _ := cmd.Flags().GetString("model")
+	apiKey, _ := cmd.Flags().GetString("api-key")
+	endpoint, _ := cmd.Flags().GetString("endpoint")
+	framework, _ := cmd.Flags().GetString("framework")
+
+	profile := config.AgentProfile{
+		Name:        name,
+		Description: description,
+		Price:       price,
+		Model:       model,
+		APIKey:      apiKey,
+		Endpoint:    endpoint,
+		Framework:   framework,
+	}
+
+	if err := agentsCfg.AddProfile(profile); err != nil {
+		return err
+	}
+	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
+		return err
+	}
+	fmt.Printf("Agent profile %q added.\n", name)
+	return nil
+}
+
+// agentConfigDelete removes an agent profile from agents.yaml.
+func agentConfigDelete(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	name := args[0]
+	if err := agentsCfg.DeleteProfile(name); err != nil {
+		return err
+	}
+	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
+		return err
+	}
+	fmt.Printf("Agent profile %q deleted.\n", name)
+	return nil
+}
+
+// agentConfigEdit updates fields of an existing agent profile in agents.yaml.
+func agentConfigEdit(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	name := args[0]
+
+	description, _ := cmd.Flags().GetString("description")
+	price, _ := cmd.Flags().GetFloat64("price")
+	model, _ := cmd.Flags().GetString("model")
+	apiKey, _ := cmd.Flags().GetString("api-key")
+	endpoint, _ := cmd.Flags().GetString("endpoint")
+
+	updates := config.AgentProfile{
+		Description: description,
+		Price:       price,
+		Model:       model,
+		APIKey:      apiKey,
+		Endpoint:    endpoint,
+	}
+
+	if err := agentsCfg.UpdateProfile(name, updates); err != nil {
+		return err
+	}
+	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
+		return err
+	}
+	fmt.Printf("Agent profile %q updated.\n", name)
 	return nil
 }
 
