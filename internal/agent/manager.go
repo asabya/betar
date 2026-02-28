@@ -40,7 +40,6 @@ type LocalAgent struct {
 	ID          string
 	Name        string
 	Description string
-	Endpoint    string
 	Price       float64
 	MetadataCID string
 	AgentID     string // ADK runtime agent ID
@@ -127,7 +126,6 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		ID:          m.p2pHost.ID().String() + "/" + runtimeAgentID,
 		Name:        spec.Name,
 		Description: spec.Description,
-		Endpoint:    spec.Endpoint,
 		Price:       spec.Price,
 		MetadataCID: metadataCID,
 		AgentID:     runtimeAgentID,
@@ -815,7 +813,6 @@ type AgentSpec struct {
 	Name        string
 	Description string
 	Image       string
-	Endpoint    string
 	Price       float64
 	Framework   string
 	Model       string

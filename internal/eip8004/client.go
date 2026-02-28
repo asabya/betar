@@ -141,9 +141,8 @@ func CreateMetadataSchema(reg *types.AgentRegistration) *MetadataSchema {
 	services := make([]Service, len(reg.Services))
 	for i, s := range reg.Services {
 		services[i] = Service{
-			Name:     s.Name,
-			Endpoint: s.Endpoint,
-			Version:  s.Version,
+			Name:    s.Name,
+			Version: s.Version,
 		}
 	}
 

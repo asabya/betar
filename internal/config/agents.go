@@ -16,7 +16,6 @@ type AgentProfile struct {
 	Model       string  `yaml:"model,omitempty"`     // falls back to GOOGLE_MODEL env
 	APIKey      string  `yaml:"api_key,omitempty"`   // falls back to GOOGLE_API_KEY env
 	Framework   string  `yaml:"framework,omitempty"` // default: "google-adk"
-	Endpoint    string  `yaml:"endpoint,omitempty"`  // default: "p2p://local"
 }
 
 // AgentsConfig is the top-level structure for agents.yaml.
@@ -133,9 +132,6 @@ func (c *AgentsConfig) UpdateProfile(name string, updates AgentProfile) error {
 	}
 	if updates.Framework != "" {
 		p.Framework = updates.Framework
-	}
-	if updates.Endpoint != "" {
-		p.Endpoint = updates.Endpoint
 	}
 	return nil
 }

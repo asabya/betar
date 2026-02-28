@@ -236,7 +236,6 @@ func init() {
 	agentServeCmd.Flags().StringP("name", "n", "", "Agent name")
 	agentServeCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentServeCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	agentServeCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
 	agentServeCmd.Flags().String("framework", "adk", "Agent framework")
 	_ = agentServeCmd.MarkFlagRequired("name")
 
@@ -247,7 +246,6 @@ func init() {
 	startCmd.Flags().StringP("name", "n", "", "Agent name")
 	startCmd.Flags().StringP("description", "d", "", "Agent description")
 	startCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	startCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
 	startCmd.Flags().String("framework", "adk", "Agent framework")
 	startCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	startCmd.Flags().Int("api-port", 8424, "HTTP API server port")
@@ -257,7 +255,6 @@ func init() {
 	agentRegisterCmd.Flags().StringP("name", "n", "", "Agent name")
 	agentRegisterCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentRegisterCmd.Flags().Float64P("price", "p", 0, "Price per task")
-	agentRegisterCmd.Flags().String("endpoint", "", "Agent endpoint")
 
 	// Agent list flags
 	agentListCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -281,7 +278,6 @@ func init() {
 	agentConfigAddCmd.Flags().Float64P("price", "r", 0, "Price per task")
 	agentConfigAddCmd.Flags().String("model", "", "ADK model name (overrides global GOOGLE_MODEL)")
 	agentConfigAddCmd.Flags().String("api-key", "", "Google API key (overrides global GOOGLE_API_KEY)")
-	agentConfigAddCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
 	agentConfigAddCmd.Flags().String("framework", "google-adk", "Agent framework")
 	_ = agentConfigAddCmd.MarkFlagRequired("name")
 
@@ -290,7 +286,6 @@ func init() {
 	agentConfigEditCmd.Flags().Float64P("price", "r", 0, "Price per task")
 	agentConfigEditCmd.Flags().String("model", "", "ADK model name")
 	agentConfigEditCmd.Flags().String("api-key", "", "Google API key")
-	agentConfigEditCmd.Flags().String("endpoint", "", "Agent endpoint")
 
 	// Wallet balance flags
 	walletBalanceCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -302,7 +297,6 @@ func init() {
 	rootCmd.Flags().StringP("name", "n", "", "Agent name (optional; registers agent on startup if set)")
 	rootCmd.Flags().StringP("description", "d", "", "Agent description")
 	rootCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	rootCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
 	rootCmd.Flags().String("framework", "adk", "Agent framework")
 	rootCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
 	rootCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
@@ -355,22 +349,17 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
 	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:        name,
 		Description: description,
-		Endpoint:    endpoint,
 		Price:       price,
 		Framework:   framework,
 		Model:       model,
 		X402Support: true,
-		Services: []types.Service{{
-			Name:     "p2p",
-			Endpoint: endpoint,
-		}},
+		Services:    []types.Service{{Name: name, Version: "1.0.0"}},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to register serving agent: %w", err)
@@ -602,22 +591,17 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
 	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:        name,
 		Description: description,
-		Endpoint:    endpoint,
 		Price:       price,
 		Framework:   framework,
 		Model:       model,
 		X402Support: true,
-		Services: []types.Service{{
-			Name:     "p2p",
-			Endpoint: endpoint,
-		}},
+		Services:    []types.Service{{Name: name, Version: "1.0.0"}},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to register serving agent: %w", err)
@@ -727,17 +711,13 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
 
 	spec := agent.AgentSpec{
 		Name:        name,
 		Description: description,
 		Price:       price,
-		Endpoint:    endpoint,
 		X402Support: true,
-		Services: []types.Service{
-			{Name: "default", Endpoint: endpoint},
-		},
+		Services:    []types.Service{{Name: name, Version: "1.0.0"}},
 	}
 
 	agent, err := agentManager.RegisterAgent(ctx, spec)
@@ -869,21 +849,16 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 		if model == "" {
 			model = cfg.Agent.Model
 		}
-		endpoint := profile.Endpoint
-		if endpoint == "" {
-			endpoint = "p2p://local"
-		}
 
 		registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 			Name:        profile.Name,
 			Description: profile.Description,
-			Endpoint:    endpoint,
 			Price:       profile.Price,
 			Framework:   profile.Framework,
 			Model:       model,
 			APIKey:      apiKey,
 			X402Support: true,
-			Services:    []types.Service{{Name: "p2p", Endpoint: endpoint}},
+			Services:    []types.Service{{Name: profile.Name, Version: "1.0.0"}},
 		})
 		if err != nil {
 			fmt.Printf("warning: failed to register agent %q from config: %v\n", profile.Name, err)
@@ -960,7 +935,6 @@ func agentConfigAdd(cmd *cobra.Command, args []string) error {
 	price, _ := cmd.Flags().GetFloat64("price")
 	model, _ := cmd.Flags().GetString("model")
 	apiKey, _ := cmd.Flags().GetString("api-key")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
 	framework, _ := cmd.Flags().GetString("framework")
 
 	profile := config.AgentProfile{
@@ -969,7 +943,6 @@ func agentConfigAdd(cmd *cobra.Command, args []string) error {
 		Price:       price,
 		Model:       model,
 		APIKey:      apiKey,
-		Endpoint:    endpoint,
 		Framework:   framework,
 	}
 
@@ -1020,14 +993,12 @@ func agentConfigEdit(cmd *cobra.Command, args []string) error {
 	price, _ := cmd.Flags().GetFloat64("price")
 	model, _ := cmd.Flags().GetString("model")
 	apiKey, _ := cmd.Flags().GetString("api-key")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
 
 	updates := config.AgentProfile{
 		Description: description,
 		Price:       price,
 		Model:       model,
 		APIKey:      apiKey,
-		Endpoint:    endpoint,
 	}
 
 	if err := agentsCfg.UpdateProfile(name, updates); err != nil {
