@@ -59,7 +59,7 @@ Available commands in the TUI input:
 
 To start a node with an agent from the TUI:
 ```
-/start --name "math-agent" --description "Performs math tasks" --price 0.001 --endpoint "p2p://math-agent" --port 4001 --model "gemini-2.5-flash"
+/start --name "math-agent" --description "Performs math tasks" --price 0.001 --port 4001 --model "gemini-2.5-flash"
 ```
 
 ### CLI mode
@@ -71,9 +71,14 @@ bin/betar start \
   --name "math-agent" \
   --description "Performs math tasks" \
   --price 0.001 \
-  --endpoint "p2p://math-agent" \
   --port 4001 \
   --model "gemini-2.5-flash"
+```
+
+Or start with no flags — agents are loaded automatically from `~/.betar/agents.yaml`:
+
+```bash
+bin/betar start --port 4001
 ```
 
 Optional bootstrap to join another node:
@@ -115,6 +120,32 @@ Alternative command to run a P2P agent end-to-end.
 
 Other agent commands are available (`register`, `list`, `discover`, `execute`) and are useful for in-process workflows.
 
+### Agent configuration file
+
+Multiple agents can be configured persistently in `$BETAR_DATA_DIR/agents.yaml` (default `~/.betar/agents.yaml`). They are registered automatically whenever `start` or `agent serve` runs — no CLI flags needed.
+
+Manage profiles offline (no node required):
+
+```bash
+# Add a profile
+bin/betar agent config add --name weather-bot --description "Weather forecasts" --price 0.001
+
+# Add with a model override and per-agent API key
+bin/betar agent config add --name code-helper --description "Code assistance" --price 0.002 \
+  --model gemini-2.0-flash --api-key $MY_OTHER_KEY
+
+# List all profiles
+bin/betar agent config list
+
+# Edit a profile (only supplied flags are updated)
+bin/betar agent config edit weather-bot --price 0.0015
+
+# Delete a profile
+bin/betar agent config delete code-helper
+```
+
+See `agents.example.yaml` for the full file format with comments.
+
 ### Order
 
 ```bash
@@ -131,16 +162,36 @@ Requires `ETHEREUM_PRIVATE_KEY` and `ETHEREUM_RPC_URL`.
 
 ## Configuration
 
-Environment variables:
+### Environment variables
 
-- `GOOGLE_API_KEY` (required)
-- `GOOGLE_MODEL` (default `gemini-2.5-flash`)
-- `BOOTSTRAP_PEERS` (comma-separated)
-- `BETAR_DATA_DIR` (default `~/.betar`)
-- `BETAR_P2P_KEY_PATH` (default `~/.betar/p2p_identity.key`)
+| Variable | Default | Description |
+|---|---|---|
+| `GOOGLE_API_KEY` | required | Gemini model access |
+| `GOOGLE_MODEL` | `gemini-2.5-flash` | Default ADK model |
+| `BOOTSTRAP_PEERS` | — | Comma-separated multiaddrs |
+| `BETAR_DATA_DIR` | `~/.betar` | Local data directory |
+| `BETAR_P2P_KEY_PATH` | `~/.betar/p2p_identity.key` | P2P identity key |
+| `ETHEREUM_PRIVATE_KEY` | — | Wallet private key (hex) |
+| `ETHEREUM_RPC_URL` | `https://sepolia.base.org` | RPC endpoint |
 
-The libp2p identity key is deterministic per key file path: generated once, then reused on every run.
-Embedded IPFS-lite data is stored under `BETAR_DATA_DIR/ipfslite`.
+The libp2p identity key is generated once and reused on every run.
+Embedded IPFS-lite data is stored under `$BETAR_DATA_DIR/ipfslite`.
+
+### agents.yaml
+
+Persistent agent profiles live at `$BETAR_DATA_DIR/agents.yaml`. Each profile maps to one agent that is registered on node startup.
+
+```yaml
+agents:
+  - name: my-agent            # required, unique
+    description: Does things   # optional
+    price: 0.001               # USDC per task; 0 = free
+    model: gemini-2.5-flash    # optional, overrides GOOGLE_MODEL
+    api_key: ""                # optional, overrides GOOGLE_API_KEY
+    framework: google-adk      # optional, default google-adk
+```
+
+Use `betar agent config add/edit/delete/list` to manage profiles, or copy `agents.example.yaml` as a starting point.
 
 ## Development
 
