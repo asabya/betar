@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	FacilitatorURL = "http://localhost:8080"
+	FacilitatorURL = "https://facilitator.x402.rs"
 	DefaultTimeout = 60
 )
 
@@ -538,7 +538,7 @@ func (s *PaymentService) settleWithFacilitator(ctx context.Context, header *Paym
 
 func (s *PaymentService) settleWithFacilitatorWithRetry(ctx context.Context, header *PaymentHeader) (string, error) {
 	const maxRetries = 5
-	baseDelay := 500 * time.Millisecond
+	baseDelay := 1 * time.Second
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
