@@ -124,6 +124,15 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.AgentID)
 	}
 
+	// Auto-load agents from agents.yaml.
+	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+	if announceInterval < 5*time.Second {
+		announceInterval = 5 * time.Second
+	}
+	if err := loadAndRegisterAgentsFromConfig(ctx, announceInterval); err != nil {
+		fmt.Printf("warning: %v\n", err)
+	}
+
 	fmt.Println("Starting Betar TUI...")
 	printRuntimeInfo()
 
