@@ -251,6 +251,7 @@ func init() {
 	agentServeCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
 	agentServeCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
 	agentServeCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
+	agentServeCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	_ = agentServeCmd.MarkFlagRequired("name")
 
 	// Unified start flags
@@ -416,7 +417,11 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	}
 
 	// Auto-load additional agents from agents.yaml.
-	if err := loadAndRegisterAgentsFromConfig(ctx, 30*time.Second); err != nil {
+	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+	if announceInterval < 5*time.Second {
+		announceInterval = 5 * time.Second
+	}
+	if err := loadAndRegisterAgentsFromConfig(ctx, announceInterval); err != nil {
 		fmt.Printf("warning: %v\n", err)
 	}
 
