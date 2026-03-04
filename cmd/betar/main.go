@@ -74,6 +74,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	tui.SetRuntime(p2pHost, agentManager, listingService, orderService)
 	tui.SetWallet(deriveWalletAddress(cfg.Ethereum.PrivateKey))
 	tui.SetDataDir(cfg.Storage.DataDir)
+	tui.SetSessionStore(sessionStore)
 
 	// Redirect stdout into the TUI log panel.
 	origStdout := os.Stdout
