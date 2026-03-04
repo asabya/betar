@@ -166,8 +166,11 @@ Requires `ETHEREUM_PRIVATE_KEY` and `ETHEREUM_RPC_URL`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `GOOGLE_API_KEY` | required | Gemini model access |
-| `GOOGLE_MODEL` | `gemini-2.5-flash` | Default ADK model |
+| `GOOGLE_API_KEY` | — | Gemini model access (required for Google provider) |
+| `GOOGLE_MODEL` | `gemini-2.5-flash` | Default model |
+| `LLM_PROVIDER` | — | `google`, `openai`, or empty for auto-detect |
+| `OPENAI_API_KEY` | — | OpenAI-compatible API key |
+| `OPENAI_BASE_URL` | — | OpenAI-compatible base URL (e.g. Ollama) |
 | `BOOTSTRAP_PEERS` | — | Comma-separated multiaddrs |
 | `BETAR_DATA_DIR` | `~/.betar` | Local data directory |
 | `BETAR_P2P_KEY_PATH` | `~/.betar/p2p_identity.key` | P2P identity key |
@@ -188,7 +191,9 @@ agents:
     price: 0.001               # USDC per task; 0 = free
     model: gemini-2.5-flash    # optional, overrides GOOGLE_MODEL
     api_key: ""                # optional, overrides GOOGLE_API_KEY
-    framework: google-adk      # optional, default google-adk
+    provider: ""               # optional: google, openai, or empty for auto-detect
+    openai_api_key: ""         # optional, for OpenAI-compatible providers
+    openai_base_url: ""        # optional, e.g. http://localhost:11434/v1/
 ```
 
 Use `betar agent config add/edit/delete/list` to manage profiles, or copy `agents.example.yaml` as a starting point.
