@@ -113,8 +113,10 @@ func (c *AgentsConfig) DeleteProfile(name string) error {
 	return fmt.Errorf("agent profile %q not found", name)
 }
 
-// UpdateProfile merges non-zero fields from updates into the existing profile.
-// Returns an error if the profile is not found.
+// UpdateProfile merges non-zero fields from updates into the named profile.
+// NOTE: zero values (empty string, 0 price) are treated as "not set" and are
+// silently ignored. The CLI's agentConfigEdit bypasses this by using
+// cmd.Flags().Changed() to detect explicit user input.
 func (c *AgentsConfig) UpdateProfile(name string, updates AgentProfile) error {
 	p := c.FindProfile(name)
 	if p == nil {
