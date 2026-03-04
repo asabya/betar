@@ -1056,27 +1056,30 @@ func agentConfigEdit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	name := args[0]
-
-	description, _ := cmd.Flags().GetString("description")
-	price, _ := cmd.Flags().GetFloat64("price")
-	model, _ := cmd.Flags().GetString("model")
-	apiKey, _ := cmd.Flags().GetString("api-key")
-	provider, _ := cmd.Flags().GetString("provider")
-	openAIAPIKey, _ := cmd.Flags().GetString("openai-api-key")
-	openAIBaseURL, _ := cmd.Flags().GetString("openai-base-url")
-
-	updates := config.AgentProfile{
-		Description:   description,
-		Price:         price,
-		Model:         model,
-		APIKey:        apiKey,
-		Provider:      provider,
-		OpenAIAPIKey:  openAIAPIKey,
-		OpenAIBaseURL: openAIBaseURL,
+	p := agentsCfg.FindProfile(name)
+	if p == nil {
+		return fmt.Errorf("agent profile %q not found", name)
 	}
-
-	if err := agentsCfg.UpdateProfile(name, updates); err != nil {
-		return err
+	if cmd.Flags().Changed("description") {
+		p.Description, _ = cmd.Flags().GetString("description")
+	}
+	if cmd.Flags().Changed("price") {
+		p.Price, _ = cmd.Flags().GetFloat64("price")
+	}
+	if cmd.Flags().Changed("model") {
+		p.Model, _ = cmd.Flags().GetString("model")
+	}
+	if cmd.Flags().Changed("api-key") {
+		p.APIKey, _ = cmd.Flags().GetString("api-key")
+	}
+	if cmd.Flags().Changed("provider") {
+		p.Provider, _ = cmd.Flags().GetString("provider")
+	}
+	if cmd.Flags().Changed("openai-api-key") {
+		p.OpenAIAPIKey, _ = cmd.Flags().GetString("openai-api-key")
+	}
+	if cmd.Flags().Changed("openai-base-url") {
+		p.OpenAIBaseURL, _ = cmd.Flags().GetString("openai-base-url")
 	}
 	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
 		return err
