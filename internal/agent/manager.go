@@ -829,7 +829,6 @@ type AgentSpec struct {
 	Description string
 	Image       string
 	Price       float64
-	Framework   string
 	Model       string
 	APIKey      string // per-agent Google API key; empty = use global default
 	Services    []types.Service

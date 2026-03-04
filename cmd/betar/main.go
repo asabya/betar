@@ -248,7 +248,6 @@ func init() {
 	agentServeCmd.Flags().StringP("name", "n", "", "Agent name")
 	agentServeCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentServeCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	agentServeCmd.Flags().String("framework", "adk", "Agent framework")
 	agentServeCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
 	agentServeCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
 	agentServeCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
@@ -261,7 +260,6 @@ func init() {
 	startCmd.Flags().StringP("name", "n", "", "Agent name")
 	startCmd.Flags().StringP("description", "d", "", "Agent description")
 	startCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	startCmd.Flags().String("framework", "adk", "Agent framework")
 	startCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	startCmd.Flags().Int("api-port", 8424, "HTTP API server port")
 	startCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
@@ -296,7 +294,6 @@ func init() {
 	agentConfigAddCmd.Flags().Float64P("price", "r", 0, "Price per task")
 	agentConfigAddCmd.Flags().String("model", "", "ADK model name (overrides global GOOGLE_MODEL)")
 	agentConfigAddCmd.Flags().String("api-key", "", "Google API key (overrides global GOOGLE_API_KEY)")
-	agentConfigAddCmd.Flags().String("framework", "google-adk", "Agent framework")
 	agentConfigAddCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
 	agentConfigAddCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key")
 	agentConfigAddCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL")
@@ -321,7 +318,6 @@ func init() {
 	rootCmd.Flags().StringP("name", "n", "", "Agent name (optional; registers agent on startup if set)")
 	rootCmd.Flags().StringP("description", "d", "", "Agent description")
 	rootCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	rootCmd.Flags().String("framework", "adk", "Agent framework")
 	rootCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
 	rootCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	rootCmd.Flags().Int("api-port", 8424, "HTTP API server port")
@@ -384,14 +380,12 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:          name,
 		Description:   description,
 		Price:         price,
-		Framework:     framework,
 		Model:         model,
 		X402Support:   true,
 		Services:      []types.Service{{Name: name, Version: "1.0.0"}},
@@ -642,14 +636,12 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:          name,
 		Description:   description,
 		Price:         price,
-		Framework:     framework,
 		Model:         model,
 		X402Support:   true,
 		Services:      []types.Service{{Name: name, Version: "1.0.0"}},
@@ -920,7 +912,6 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 			Name:          profile.Name,
 			Description:   profile.Description,
 			Price:         profile.Price,
-			Framework:     profile.Framework,
 			Model:         model,
 			APIKey:        apiKey,
 			X402Support:   true,
@@ -1008,7 +999,6 @@ func agentConfigAdd(cmd *cobra.Command, args []string) error {
 	price, _ := cmd.Flags().GetFloat64("price")
 	model, _ := cmd.Flags().GetString("model")
 	apiKey, _ := cmd.Flags().GetString("api-key")
-	framework, _ := cmd.Flags().GetString("framework")
 	provider, _ := cmd.Flags().GetString("provider")
 	openAIAPIKey, _ := cmd.Flags().GetString("openai-api-key")
 	openAIBaseURL, _ := cmd.Flags().GetString("openai-base-url")
@@ -1019,7 +1009,6 @@ func agentConfigAdd(cmd *cobra.Command, args []string) error {
 		Price:         price,
 		Model:         model,
 		APIKey:        apiKey,
-		Framework:     framework,
 		Provider:      provider,
 		OpenAIAPIKey:  openAIAPIKey,
 		OpenAIBaseURL: openAIBaseURL,

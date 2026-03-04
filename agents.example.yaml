@@ -8,7 +8,6 @@ agents:
     price: 0.001          # USDC per task (0 = free)
     model: gemini-2.5-flash  # optional — overrides GOOGLE_MODEL
     api_key: ""           # optional — overrides GOOGLE_API_KEY (leave empty to use env)
-    framework: google-adk # optional — default is google-adk
 
   - name: code-helper
     description: Helps with code review, debugging, and generation
