@@ -124,6 +124,15 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.AgentID)
 	}
 
+	// Auto-load agents from agents.yaml.
+	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+	if announceInterval < 5*time.Second {
+		announceInterval = 5 * time.Second
+	}
+	if err := loadAndRegisterAgentsFromConfig(ctx, announceInterval); err != nil {
+		fmt.Printf("warning: %v\n", err)
+	}
+
 	fmt.Println("Starting Betar TUI...")
 	printRuntimeInfo()
 
@@ -170,6 +179,37 @@ var agentExecuteCmd = &cobra.Command{
 	RunE:  executeAgent,
 }
 
+var agentConfigCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Manage agent configurations",
+}
+
+var agentConfigListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List configured agent profiles",
+	RunE:  agentConfigList,
+}
+
+var agentConfigAddCmd = &cobra.Command{
+	Use:   "add",
+	Short: "Add a new agent profile",
+	RunE:  agentConfigAdd,
+}
+
+var agentConfigDeleteCmd = &cobra.Command{
+	Use:   "delete <name>",
+	Short: "Delete an agent profile",
+	Args:  cobra.ExactArgs(1),
+	RunE:  agentConfigDelete,
+}
+
+var agentConfigEditCmd = &cobra.Command{
+	Use:   "edit <name>",
+	Short: "Edit an agent profile",
+	Args:  cobra.ExactArgs(1),
+	RunE:  agentConfigEdit,
+}
+
 var orderCmd = &cobra.Command{
 	Use:   "order",
 	Short: "Manage orders",
@@ -197,6 +237,9 @@ func init() {
 	nodeCmd.Flags().IntP("port", "p", 4001, "Port to listen on")
 	nodeCmd.Flags().StringSlice("bootstrap", []string{}, "Bootstrap peers")
 	nodeCmd.Flags().String("model", "gemini-2.5-flash", "ADK model name")
+	nodeCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
+	nodeCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
+	nodeCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
 
 	// Agent serve flags
 	agentServeCmd.Flags().IntP("port", "p", 4001, "Port to listen on")
@@ -205,8 +248,10 @@ func init() {
 	agentServeCmd.Flags().StringP("name", "n", "", "Agent name")
 	agentServeCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentServeCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	agentServeCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
-	agentServeCmd.Flags().String("framework", "adk", "Agent framework")
+	agentServeCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
+	agentServeCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
+	agentServeCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
+	agentServeCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	_ = agentServeCmd.MarkFlagRequired("name")
 
 	// Unified start flags
@@ -216,17 +261,17 @@ func init() {
 	startCmd.Flags().StringP("name", "n", "", "Agent name")
 	startCmd.Flags().StringP("description", "d", "", "Agent description")
 	startCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	startCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
-	startCmd.Flags().String("framework", "adk", "Agent framework")
 	startCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	startCmd.Flags().Int("api-port", 8424, "HTTP API server port")
-	_ = startCmd.MarkFlagRequired("name")
+	startCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
+	startCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
+	startCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
+	// --name is optional for startCmd; agents can be loaded from agents.yaml
 
 	// Agent register flags
 	agentRegisterCmd.Flags().StringP("name", "n", "", "Agent name")
 	agentRegisterCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentRegisterCmd.Flags().Float64P("price", "p", 0, "Price per task")
-	agentRegisterCmd.Flags().String("endpoint", "", "Agent endpoint")
 
 	// Agent list flags
 	agentListCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -244,6 +289,26 @@ func init() {
 	orderCreateCmd.Flags().String("agent-id", "", "Agent ID")
 	orderCreateCmd.Flags().Float64("price", 0, "Price")
 
+	// Agent config add flags
+	agentConfigAddCmd.Flags().StringP("name", "n", "", "Agent name")
+	agentConfigAddCmd.Flags().StringP("description", "d", "", "Agent description")
+	agentConfigAddCmd.Flags().Float64P("price", "r", 0, "Price per task")
+	agentConfigAddCmd.Flags().String("model", "", "ADK model name (overrides global GOOGLE_MODEL)")
+	agentConfigAddCmd.Flags().String("api-key", "", "Google API key (overrides global GOOGLE_API_KEY)")
+	agentConfigAddCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
+	agentConfigAddCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key")
+	agentConfigAddCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL")
+	_ = agentConfigAddCmd.MarkFlagRequired("name")
+
+	// Agent config edit flags
+	agentConfigEditCmd.Flags().StringP("description", "d", "", "Agent description")
+	agentConfigEditCmd.Flags().Float64P("price", "r", 0, "Price per task")
+	agentConfigEditCmd.Flags().String("model", "", "ADK model name")
+	agentConfigEditCmd.Flags().String("api-key", "", "Google API key")
+	agentConfigEditCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
+	agentConfigEditCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key")
+	agentConfigEditCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL")
+
 	// Wallet balance flags
 	walletBalanceCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
 
@@ -254,11 +319,12 @@ func init() {
 	rootCmd.Flags().StringP("name", "n", "", "Agent name (optional; registers agent on startup if set)")
 	rootCmd.Flags().StringP("description", "d", "", "Agent description")
 	rootCmd.Flags().Float64P("price", "r", 0, "Price per task")
-	rootCmd.Flags().String("endpoint", "p2p://local", "Agent endpoint")
-	rootCmd.Flags().String("framework", "adk", "Agent framework")
 	rootCmd.Flags().Bool("x402", false, "Support EIP-402 payments")
 	rootCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
 	rootCmd.Flags().Int("api-port", 8424, "HTTP API server port")
+	rootCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
+	rootCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
+	rootCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
 
 	// Add commands
 	rootCmd.AddCommand(nodeCmd)
@@ -272,6 +338,8 @@ func init() {
 	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentExecuteCmd)
 	agentCmd.AddCommand(agentServeCmd)
+	agentCmd.AddCommand(agentConfigCmd)
+	agentConfigCmd.AddCommand(agentConfigListCmd, agentConfigAddCmd, agentConfigDeleteCmd, agentConfigEditCmd)
 
 	orderCmd.AddCommand(orderCreateCmd)
 	walletCmd.AddCommand(walletBalanceCmd)
@@ -282,6 +350,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// getOptionalFlag reads a flag if it's registered on the command, otherwise returns "".
+func getOptionalFlag(cmd *cobra.Command, name string) string {
+	if f := cmd.Flags().Lookup(name); f != nil {
+		return f.Value.String()
+	}
+	return ""
 }
 
 func runNode(cmd *cobra.Command, args []string) error {
@@ -305,22 +381,18 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
-	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
-		Name:        name,
-		Description: description,
-		Endpoint:    endpoint,
-		Price:       price,
-		Framework:   framework,
-		Model:       model,
-		X402Support: true,
-		Services: []types.Service{{
-			Name:     "p2p",
-			Endpoint: endpoint,
-		}},
+		Name:          name,
+		Description:   description,
+		Price:         price,
+		Model:         model,
+		X402Support:   true,
+		Services:      []types.Service{{Name: name, Version: "1.0.0"}},
+		Provider:      getOptionalFlag(cmd, "provider"),
+		OpenAIAPIKey:  getOptionalFlag(cmd, "openai-api-key"),
+		OpenAIBaseURL: getOptionalFlag(cmd, "openai-base-url"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to register serving agent: %w", err)
@@ -344,6 +416,15 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Auto-load additional agents from agents.yaml.
+	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+	if announceInterval < 5*time.Second {
+		announceInterval = 5 * time.Second
+	}
+	if err := loadAndRegisterAgentsFromConfig(ctx, announceInterval); err != nil {
+		fmt.Printf("warning: %v\n", err)
+	}
+
 	fmt.Println("P2P Agent Serving")
 	printRuntimeInfo()
 	fmt.Printf("ID: %s\n", registered.ID)
@@ -360,16 +441,36 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	defer shutdownRuntime()
 
-	registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
-	if err != nil {
-		return err
+	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
+	if announceInterval < 5*time.Second {
+		announceInterval = 5 * time.Second
 	}
 
-	if listingService != nil {
-		listingService.UpsertLocalListing(listingMsg)
-		if data, err := json.Marshal(listingMsg); err == nil {
-			_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+	// Register agent from CLI flags if --name is set.
+	name, _ := cmd.Flags().GetString("name")
+	if name != "" {
+		registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
+		if err != nil {
+			return err
 		}
+		if listingService != nil {
+			listingService.UpsertLocalListing(listingMsg)
+			if data, err := json.Marshal(listingMsg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
+		}
+		go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
+			msg := *listingMsg
+			msg.Type = "update"
+			msg.Timestamp = ts
+			return &msg
+		})
+		fmt.Printf("Agent registered: %s (%s)\n", registered.Name, registered.AgentID)
+	}
+
+	// Auto-load agents from agents.yaml.
+	if err := loadAndRegisterAgentsFromConfig(ctx, announceInterval); err != nil {
+		fmt.Printf("warning: %v\n", err)
 	}
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
@@ -378,18 +479,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
 	fmt.Printf("HTTP API server running on port %d\n", apiPort)
-
-	announceInterval, _ := cmd.Flags().GetDuration("announce-interval")
-	if announceInterval < 5*time.Second {
-		announceInterval = 5 * time.Second
-	}
-
-	go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
-		msg := *listingMsg
-		msg.Type = "update"
-		msg.Timestamp = ts
-		return &msg
-	})
 
 	if paymentService != nil {
 		go func() {
@@ -408,9 +497,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Betar Started (single process)")
 	printRuntimeInfo()
-	fmt.Printf("Agent ID: %s\n", registered.AgentID)
-	fmt.Printf("Agent Name: %s\n", registered.Name)
-	fmt.Printf("Metadata CID: %s\n", registered.MetadataCID)
 	fmt.Println("Marketplace mode: CRDT directory + direct stream RPC")
 	waitForShutdown()
 	return nil
@@ -430,6 +516,16 @@ func initRuntime(cmd *cobra.Command) error {
 	cfg.P2P.Port = port
 	cfg.P2P.BootstrapPeers = bootstrap
 	cfg.Agent.Model = modelName
+
+	if provider := getOptionalFlag(cmd, "provider"); provider != "" {
+		cfg.Agent.Provider = provider
+	}
+	if key := getOptionalFlag(cmd, "openai-api-key"); key != "" {
+		cfg.Agent.OpenAIAPIKey = key
+	}
+	if url := getOptionalFlag(cmd, "openai-base-url"); url != "" {
+		cfg.Agent.OpenAIBaseURL = url
+	}
 
 	ctx, cancel = context.WithCancel(context.Background())
 
@@ -487,9 +583,12 @@ func initRuntime(cmd *cobra.Command) error {
 	}
 
 	agentManager, err = agent.NewManager(agent.ADKConfig{
-		AppName:   "betar",
-		ModelName: cfg.Agent.Model,
-		APIKey:    cfg.Agent.APIKey,
+		AppName:       "betar",
+		ModelName:     cfg.Agent.Model,
+		APIKey:        cfg.Agent.APIKey,
+		Provider:      cfg.Agent.Provider,
+		OpenAIAPIKey:  cfg.Agent.OpenAIAPIKey,
+		OpenAIBaseURL: cfg.Agent.OpenAIBaseURL,
 	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr)
 	if err != nil {
 		return fmt.Errorf("failed to create agent manager: %w", err)
@@ -542,22 +641,18 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
-	framework, _ := cmd.Flags().GetString("framework")
 	model, _ := cmd.Flags().GetString("model")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
-		Name:        name,
-		Description: description,
-		Endpoint:    endpoint,
-		Price:       price,
-		Framework:   framework,
-		Model:       model,
-		X402Support: true,
-		Services: []types.Service{{
-			Name:     "p2p",
-			Endpoint: endpoint,
-		}},
+		Name:          name,
+		Description:   description,
+		Price:         price,
+		Model:         model,
+		X402Support:   true,
+		Services:      []types.Service{{Name: name, Version: "1.0.0"}},
+		Provider:      getOptionalFlag(cmd, "provider"),
+		OpenAIAPIKey:  getOptionalFlag(cmd, "openai-api-key"),
+		OpenAIBaseURL: getOptionalFlag(cmd, "openai-base-url"),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to register serving agent: %w", err)
@@ -667,17 +762,13 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
-	endpoint, _ := cmd.Flags().GetString("endpoint")
 
 	spec := agent.AgentSpec{
 		Name:        name,
 		Description: description,
 		Price:       price,
-		Endpoint:    endpoint,
 		X402Support: true,
-		Services: []types.Service{
-			{Name: "default", Endpoint: endpoint},
-		},
+		Services:    []types.Service{{Name: name, Version: "1.0.0"}},
 	}
 
 	agent, err := agentManager.RegisterAgent(ctx, spec)
@@ -787,6 +878,197 @@ func createOrder(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Buyer ID: %s\n", order.BuyerID)
 	}
 
+	return nil
+}
+
+// loadAndRegisterAgentsFromConfig reads agents.yaml and registers each profile.
+func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.Duration) error {
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return fmt.Errorf("loading agents config: %w", err)
+	}
+	if len(agentsCfg.Agents) == 0 {
+		return nil
+	}
+
+	for _, profile := range agentsCfg.Agents {
+		registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
+			Name:          profile.Name,
+			Description:   profile.Description,
+			Price:         profile.Price,
+			Model:         profile.Model,
+			APIKey:        profile.APIKey,
+			X402Support:   true,
+			Services:      []types.Service{{Name: profile.Name, Version: "1.0.0"}},
+			Provider:      profile.Provider,
+			OpenAIAPIKey:  profile.OpenAIAPIKey,
+			OpenAIBaseURL: profile.OpenAIBaseURL,
+		})
+		if err != nil {
+			fmt.Printf("warning: failed to register agent %q from config: %v\n", profile.Name, err)
+			continue
+		}
+
+		if listingService != nil {
+			msg := &types.AgentListingMessage{
+				Type:      "list",
+				AgentID:   registered.AgentID,
+				Name:      registered.Name,
+				Price:     registered.Price,
+				Metadata:  registered.MetadataCID,
+				SellerID:  p2pHost.ID().String(),
+				Addrs:     p2pHost.AddrStrings(),
+				Protocols: []string{p2p.X402ProtocolID},
+				Timestamp: time.Now().Unix(),
+			}
+			listingService.UpsertLocalListing(msg)
+			if data, err := json.Marshal(msg); err == nil {
+				_ = p2pPubSub.Publish(ctx, marketplace.AnnounceTopic, data)
+			}
+			go runListingAnnouncer(ctx, announceInterval, func(ts int64) *types.AgentListingMessage {
+				m := *msg
+				m.Type = "update"
+				m.Timestamp = ts
+				return &m
+			})
+		}
+
+		fmt.Printf("Agent loaded from config: %s (%s)\n", registered.Name, registered.AgentID)
+	}
+	return nil
+}
+
+// agentConfigList prints all configured agent profiles.
+func agentConfigList(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	if len(agentsCfg.Agents) == 0 {
+		fmt.Println("No agent profiles configured.")
+		return nil
+	}
+	fmt.Printf("%-20s %-40s %10s  %-20s  %-10s\n", "NAME", "DESCRIPTION", "PRICE", "MODEL", "PROVIDER")
+	for _, p := range agentsCfg.Agents {
+		model := p.Model
+		if model == "" {
+			model = "(global)"
+		}
+		provider := p.Provider
+		if provider == "" {
+			provider = "(auto)"
+		}
+		fmt.Printf("%-20s %-40s %10.6f  %-20s  %-10s\n", p.Name, p.Description, p.Price, model, provider)
+	}
+	return nil
+}
+
+// agentConfigAdd adds a new agent profile to agents.yaml.
+func agentConfigAdd(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+
+	name, _ := cmd.Flags().GetString("name")
+	description, _ := cmd.Flags().GetString("description")
+	price, _ := cmd.Flags().GetFloat64("price")
+	model, _ := cmd.Flags().GetString("model")
+	apiKey, _ := cmd.Flags().GetString("api-key")
+	provider, _ := cmd.Flags().GetString("provider")
+	openAIAPIKey, _ := cmd.Flags().GetString("openai-api-key")
+	openAIBaseURL, _ := cmd.Flags().GetString("openai-base-url")
+
+	profile := config.AgentProfile{
+		Name:          name,
+		Description:   description,
+		Price:         price,
+		Model:         model,
+		APIKey:        apiKey,
+		Provider:      provider,
+		OpenAIAPIKey:  openAIAPIKey,
+		OpenAIBaseURL: openAIBaseURL,
+	}
+
+	if err := agentsCfg.AddProfile(profile); err != nil {
+		return err
+	}
+	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
+		return err
+	}
+	fmt.Printf("Agent profile %q added.\n", name)
+	return nil
+}
+
+// agentConfigDelete removes an agent profile from agents.yaml.
+func agentConfigDelete(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	name := args[0]
+	if err := agentsCfg.DeleteProfile(name); err != nil {
+		return err
+	}
+	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
+		return err
+	}
+	fmt.Printf("Agent profile %q deleted.\n", name)
+	return nil
+}
+
+// agentConfigEdit updates fields of an existing agent profile in agents.yaml.
+func agentConfigEdit(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	agentsCfg, err := config.LoadAgentsConfig(cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	name := args[0]
+	p := agentsCfg.FindProfile(name)
+	if p == nil {
+		return fmt.Errorf("agent profile %q not found", name)
+	}
+	if cmd.Flags().Changed("description") {
+		p.Description, _ = cmd.Flags().GetString("description")
+	}
+	if cmd.Flags().Changed("price") {
+		p.Price, _ = cmd.Flags().GetFloat64("price")
+	}
+	if cmd.Flags().Changed("model") {
+		p.Model, _ = cmd.Flags().GetString("model")
+	}
+	if cmd.Flags().Changed("api-key") {
+		p.APIKey, _ = cmd.Flags().GetString("api-key")
+	}
+	if cmd.Flags().Changed("provider") {
+		p.Provider, _ = cmd.Flags().GetString("provider")
+	}
+	if cmd.Flags().Changed("openai-api-key") {
+		p.OpenAIAPIKey, _ = cmd.Flags().GetString("openai-api-key")
+	}
+	if cmd.Flags().Changed("openai-base-url") {
+		p.OpenAIBaseURL, _ = cmd.Flags().GetString("openai-base-url")
+	}
+	if err := config.SaveAgentsConfig(cfg.Storage.DataDir, agentsCfg); err != nil {
+		return err
+	}
+	fmt.Printf("Agent profile %q updated.\n", name)
 	return nil
 }
 

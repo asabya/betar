@@ -49,8 +49,11 @@ type EthereumConfig struct {
 
 // AgentConfig holds agent configuration
 type AgentConfig struct {
-	Model  string
-	APIKey string
+	Model         string
+	APIKey        string // Google API key (env: GOOGLE_API_KEY)
+	Provider      string // "google", "openai", or "" for auto-detect (env: LLM_PROVIDER)
+	OpenAIAPIKey  string // OpenAI-compatible API key (env: OPENAI_API_KEY)
+	OpenAIBaseURL string // OpenAI-compatible base URL (env: OPENAI_BASE_URL)
 }
 
 // StorageConfig holds local persistent storage configuration
@@ -80,8 +83,11 @@ func LoadConfig() (*Config, error) {
 			ChainID:    84532, // Base Sepolia
 		},
 		Agent: &AgentConfig{
-			Model:  getEnv("GOOGLE_MODEL", "gemini-2.5-flash"),
-			APIKey: getEnv("GOOGLE_API_KEY", ""),
+			Model:         getEnv("GOOGLE_MODEL", "gemini-2.5-flash"),
+			APIKey:        getEnv("GOOGLE_API_KEY", ""),
+			Provider:      getEnv("LLM_PROVIDER", ""),
+			OpenAIAPIKey:  getEnv("OPENAI_API_KEY", ""),
+			OpenAIBaseURL: getEnv("OPENAI_BASE_URL", ""),
 		},
 		Storage: &StorageConfig{},
 	}

@@ -18,9 +18,8 @@ type AgentRegistration struct {
 
 // Service represents a service offered by an agent
 type Service struct {
-	Name     string `json:"name"`
-	Endpoint string `json:"endpoint"`
-	Version  string `json:"version,omitempty"`
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
 }
 
 // AgentListing represents an agent listed on the marketplace (off-chain)

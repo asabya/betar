@@ -10,11 +10,14 @@ import (
 
 	didkeyctl "github.com/MetaMask/go-did-it/controller/did-key"
 	"github.com/MetaMask/go-did-it/crypto/ed25519"
+	adkopenai "github.com/byebyebruce/adk-go-openai"
 	"github.com/asabya/betar/pkg/types"
 	"github.com/google/uuid"
+	go_openai "github.com/sashabaranov/go-openai"
 	p2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
@@ -25,8 +28,13 @@ import (
 type ADKConfig struct {
 	AppName   string
 	ModelName string
-	APIKey    string
+	APIKey    string            // Google API key
 	PrivKey   p2pcrypto.PrivKey // libp2p private key for DID generation
+
+	// Provider fields
+	Provider      string // "google", "openai", or "" for auto-detect
+	OpenAIAPIKey  string // OpenAI-compatible API key
+	OpenAIBaseURL string // OpenAI-compatible base URL (empty = api.openai.com)
 }
 
 // Runtime defines required agent runtime capabilities.
@@ -40,8 +48,13 @@ type Runtime interface {
 type ADKRuntime struct {
 	appName   string
 	modelName string
-	apiKey    string
+	apiKey    string            // Google API key
 	privKey   p2pcrypto.PrivKey
+
+	// Provider fields
+	provider      string // resolved: "google" or "openai"
+	openAIAPIKey  string
+	openAIBaseURL string
 
 	mu     sync.RWMutex
 	agents map[string]*runtimeAgent
@@ -57,23 +70,77 @@ type runtimeAgent struct {
 
 // NewADKRuntime creates a runtime wrapper.
 func NewADKRuntime(cfg ADKConfig) (*ADKRuntime, error) {
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("API key is required for ADK runtime")
+	provider, err := resolveProvider(cfg)
+	if err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(cfg.ModelName) == "" {
-		cfg.ModelName = "gemini-2.5-flash"
+		cfg.ModelName = defaultModelName(provider)
 	}
 	if strings.TrimSpace(cfg.AppName) == "" {
 		cfg.AppName = "betar"
 	}
-
 	return &ADKRuntime{
-		appName:   cfg.AppName,
-		modelName: cfg.ModelName,
-		apiKey:    cfg.APIKey,
-		privKey:   cfg.PrivKey,
-		agents:    make(map[string]*runtimeAgent),
+		appName:       cfg.AppName,
+		modelName:     cfg.ModelName,
+		apiKey:        cfg.APIKey,
+		privKey:       cfg.PrivKey,
+		provider:      provider,
+		openAIAPIKey:  cfg.OpenAIAPIKey,
+		openAIBaseURL: cfg.OpenAIBaseURL,
+		agents:        make(map[string]*runtimeAgent),
 	}, nil
+}
+
+// resolveProvider determines which LLM provider to use.
+func resolveProvider(cfg ADKConfig) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case "google":
+		if strings.TrimSpace(cfg.APIKey) == "" {
+			return "", fmt.Errorf("provider %q requires APIKey (GOOGLE_API_KEY)", cfg.Provider)
+		}
+		return "google", nil
+	case "openai":
+		if strings.TrimSpace(cfg.OpenAIAPIKey) == "" && strings.TrimSpace(cfg.OpenAIBaseURL) == "" {
+			return "", fmt.Errorf("provider %q requires OpenAIAPIKey (OPENAI_API_KEY) or OpenAIBaseURL (OPENAI_BASE_URL)", cfg.Provider)
+		}
+		return "openai", nil
+	case "":
+		// Auto-detect: google wins if APIKey present
+		if strings.TrimSpace(cfg.APIKey) != "" {
+			return "google", nil
+		}
+		if strings.TrimSpace(cfg.OpenAIAPIKey) != "" || strings.TrimSpace(cfg.OpenAIBaseURL) != "" {
+			return "openai", nil
+		}
+		return "", fmt.Errorf("llm provider not available: set GOOGLE_API_KEY for Google, or OPENAI_API_KEY/OPENAI_BASE_URL for OpenAI-compatible providers")
+	default:
+		return "", fmt.Errorf("unknown provider %q: must be \"google\", \"openai\", or empty for auto-detect", cfg.Provider)
+	}
+}
+
+// defaultModelName returns a sensible default model for the given provider.
+func defaultModelName(provider string) string {
+	if provider == "openai" {
+		return "gpt-4o-mini"
+	}
+	return "gemini-2.5-flash"
+}
+
+// selectLLM creates the LLM for the resolved provider.
+func (r *ADKRuntime) selectLLM(ctx context.Context, modelName string) (model.LLM, error) {
+	switch r.provider {
+	case "google":
+		return gemini.NewModel(ctx, modelName, &genai.ClientConfig{APIKey: r.apiKey})
+	case "openai":
+		cfg := go_openai.DefaultConfig(r.openAIAPIKey)
+		if strings.TrimSpace(r.openAIBaseURL) != "" {
+			cfg.BaseURL = r.openAIBaseURL
+		}
+		return adkopenai.NewOpenAIModel(modelName, cfg), nil
+	default:
+		return nil, fmt.Errorf("unknown provider %q", r.provider)
+	}
 }
 
 // CreateAgent creates a runtime agent and returns runtime agent ID.
@@ -88,9 +155,9 @@ func (r *ADKRuntime) CreateAgent(ctx context.Context, spec AgentSpec) (string, e
 		modelName = strings.TrimSpace(spec.Model)
 	}
 
-	llm, err := gemini.NewModel(ctx, modelName, &genai.ClientConfig{APIKey: r.apiKey})
+	llm, err := r.selectLLM(ctx, modelName)
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize gemini model: %w", err)
+		return "", fmt.Errorf("failed to initialize llm model: %w", err)
 	}
 
 	instruction := strings.TrimSpace(spec.Description)

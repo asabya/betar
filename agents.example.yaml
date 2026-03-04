@@ -1,0 +1,15 @@
+# agents.yaml — persistent agent profiles loaded automatically on node start.
+# Copy to ~/.betar/agents.yaml (or $BETAR_DATA_DIR/agents.yaml) and edit as needed.
+# You can also manage profiles with: betar agent config add/edit/delete/list
+
+agents:
+  - name: weather-bot
+    description: Answers questions about current and forecast weather
+    price: 0.001          # USDC per task (0 = free)
+    model: gemini-2.5-flash  # optional — overrides GOOGLE_MODEL
+    api_key: ""           # optional — overrides GOOGLE_API_KEY (leave empty to use env)
+
+  - name: code-helper
+    description: Helps with code review, debugging, and generation
+    price: 0.002
+    # model and api_key omitted — inherits from environment

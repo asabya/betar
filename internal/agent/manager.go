@@ -22,13 +22,14 @@ import (
 
 // Manager manages agent lifecycle
 type Manager struct {
-	runtime           Runtime
+	defaultCfg        ADKConfig
+	runtimes          map[string]Runtime // agentDID → isolated Runtime
 	ipfsClient        *ipfs.Client
 	p2pHost           *p2p.Host
 	x402StreamHandler *p2p.X402StreamHandler
-	listingService     *marketplace.AgentListingService
-	paymentService     *marketplace.PaymentService
-	walletAddress      string
+	listingService    *marketplace.AgentListingService
+	paymentService    *marketplace.PaymentService
+	walletAddress     string
 
 	mu          sync.RWMutex
 	localAgents map[string]*LocalAgent
@@ -39,7 +40,6 @@ type LocalAgent struct {
 	ID          string
 	Name        string
 	Description string
-	Endpoint    string
 	Price       float64
 	MetadataCID string
 	AgentID     string // ADK runtime agent ID
@@ -56,15 +56,12 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 		return nil, fmt.Errorf("p2p host is required")
 	}
 
-	// Pass the private key to runtime config for DID generation
+	// Store the private key in the default config for per-agent runtime creation.
 	runtimeCfg.PrivKey = privKey
-	runtime, err := NewADKRuntime(runtimeCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize runtime: %w", err)
-	}
 
 	m := &Manager{
-		runtime:        runtime,
+		defaultCfg:     runtimeCfg,
+		runtimes:       make(map[string]Runtime),
 		ipfsClient:     ipfsClient,
 		p2pHost:        p2pHost,
 		listingService: listingService,
@@ -78,8 +75,42 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 
 // RegisterAgent registers a new agent locally and publishes to marketplace
 func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgent, error) {
-	// Create agent in runtime
-	runtimeAgentID, err := m.runtime.CreateAgent(ctx, spec)
+	// Build per-agent runtime config, falling back to global defaults.
+	apiKey := spec.APIKey
+	if apiKey == "" {
+		apiKey = m.defaultCfg.APIKey
+	}
+	model := spec.Model
+	if model == "" {
+		model = m.defaultCfg.ModelName
+	}
+	provider := spec.Provider
+	if provider == "" {
+		provider = m.defaultCfg.Provider
+	}
+	openAIAPIKey := spec.OpenAIAPIKey
+	if openAIAPIKey == "" {
+		openAIAPIKey = m.defaultCfg.OpenAIAPIKey
+	}
+	openAIBaseURL := spec.OpenAIBaseURL
+	if openAIBaseURL == "" {
+		openAIBaseURL = m.defaultCfg.OpenAIBaseURL
+	}
+	rt, err := NewADKRuntime(ADKConfig{
+		AppName:       m.defaultCfg.AppName,
+		ModelName:     model,
+		APIKey:        apiKey,
+		PrivKey:       m.defaultCfg.PrivKey,
+		Provider:      provider,
+		OpenAIAPIKey:  openAIAPIKey,
+		OpenAIBaseURL: openAIBaseURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent runtime: %w", err)
+	}
+
+	// Create agent in the per-agent runtime.
+	runtimeAgentID, err := rt.CreateAgent(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
@@ -110,7 +141,6 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		ID:          m.p2pHost.ID().String() + "/" + runtimeAgentID,
 		Name:        spec.Name,
 		Description: spec.Description,
-		Endpoint:    spec.Endpoint,
 		Price:       spec.Price,
 		MetadataCID: metadataCID,
 		AgentID:     runtimeAgentID,
@@ -118,8 +148,9 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		CreatedAt:   time.Now(),
 	}
 
-	// Store locally
+	// Store locally, indexed by the runtime agent ID.
 	m.mu.Lock()
+	m.runtimes[runtimeAgentID] = rt
 	m.localAgents[agent.AgentID] = agent
 	m.mu.Unlock()
 
@@ -137,11 +168,18 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID, input string) (strin
 
 	if ok {
 		fmt.Printf("[ExecuteTask] Found local agent: %s (name: %s)\n", agent.AgentID, agent.Name)
-		// Execute locally
+		// Execute locally using the per-agent runtime.
+		m.mu.RLock()
+		rt, rtok := m.runtimes[agent.AgentID]
+		m.mu.RUnlock()
+		if !rtok {
+			return "", fmt.Errorf("runtime not found for agent: %s", agent.AgentID)
+		}
+
 		requestID := fmt.Sprintf("local-%d", time.Now().UnixNano())
 		fmt.Printf("[ExecuteTask] Executing locally with requestID: %s\n", requestID)
 
-		result, err := m.runtime.RunTask(ctx, types.TaskRequest{
+		result, err := rt.RunTask(ctx, types.TaskRequest{
 			AgentID:   agent.AgentID,
 			Input:     input,
 			RequestID: requestID,
@@ -347,8 +385,12 @@ func (m *Manager) ListAgents() []*LocalAgent {
 func (m *Manager) DeregisterAgent(ctx context.Context, agentID string) error {
 	m.mu.Lock()
 	agent, ok := m.localAgents[agentID]
+	var rt Runtime
+	var rtok bool
 	if ok {
+		rt, rtok = m.runtimes[agent.AgentID]
 		delete(m.localAgents, agentID)
+		delete(m.runtimes, agent.AgentID)
 	}
 	m.mu.Unlock()
 
@@ -356,8 +398,10 @@ func (m *Manager) DeregisterAgent(ctx context.Context, agentID string) error {
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	if err := m.runtime.DeleteAgent(ctx, agent.AgentID); err != nil {
-		return fmt.Errorf("failed to delete runtime agent: %w", err)
+	if rtok {
+		if err := rt.DeleteAgent(ctx, agent.AgentID); err != nil {
+			return fmt.Errorf("failed to delete runtime agent: %w", err)
+		}
 	}
 
 	return nil
@@ -784,12 +828,16 @@ type AgentSpec struct {
 	Name        string
 	Description string
 	Image       string
-	Endpoint    string
 	Price       float64
-	Framework   string
 	Model       string
+	APIKey      string // per-agent Google API key; empty = use global default
 	Services    []types.Service
 	X402Support bool
+
+	// Provider fields
+	Provider      string // "google", "openai", or "" for auto-detect
+	OpenAIAPIKey  string // OpenAI-compatible API key
+	OpenAIBaseURL string // OpenAI-compatible base URL
 }
 
 // ConnectToAgent connects to a remote agent via P2P
