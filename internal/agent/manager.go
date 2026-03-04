@@ -84,11 +84,26 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 	if model == "" {
 		model = m.defaultCfg.ModelName
 	}
+	provider := spec.Provider
+	if provider == "" {
+		provider = m.defaultCfg.Provider
+	}
+	openAIAPIKey := spec.OpenAIAPIKey
+	if openAIAPIKey == "" {
+		openAIAPIKey = m.defaultCfg.OpenAIAPIKey
+	}
+	openAIBaseURL := spec.OpenAIBaseURL
+	if openAIBaseURL == "" {
+		openAIBaseURL = m.defaultCfg.OpenAIBaseURL
+	}
 	rt, err := NewADKRuntime(ADKConfig{
-		AppName:   m.defaultCfg.AppName,
-		ModelName: model,
-		APIKey:    apiKey,
-		PrivKey:   m.defaultCfg.PrivKey,
+		AppName:       m.defaultCfg.AppName,
+		ModelName:     model,
+		APIKey:        apiKey,
+		PrivKey:       m.defaultCfg.PrivKey,
+		Provider:      provider,
+		OpenAIAPIKey:  openAIAPIKey,
+		OpenAIBaseURL: openAIBaseURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent runtime: %w", err)
@@ -816,9 +831,14 @@ type AgentSpec struct {
 	Price       float64
 	Framework   string
 	Model       string
-	APIKey      string // per-agent API key; empty = use global default
+	APIKey      string // per-agent Google API key; empty = use global default
 	Services    []types.Service
 	X402Support bool
+
+	// Provider fields
+	Provider      string // "google", "openai", or "" for auto-detect
+	OpenAIAPIKey  string // OpenAI-compatible API key
+	OpenAIBaseURL string // OpenAI-compatible base URL
 }
 
 // ConnectToAgent connects to a remote agent via P2P

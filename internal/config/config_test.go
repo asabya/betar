@@ -7,6 +7,26 @@ import (
 	p2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 )
 
+func TestAgentConfigNewProviderFields(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "openai")
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	t.Setenv("OPENAI_BASE_URL", "http://localhost:11434/v1/")
+	t.Setenv("BETAR_P2P_KEY_PATH", t.TempDir()+"/p2p.key")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Agent.Provider != "openai" {
+		t.Fatalf("Provider not loaded: %q", cfg.Agent.Provider)
+	}
+	if cfg.Agent.OpenAIAPIKey != "sk-test" {
+		t.Fatalf("OpenAIAPIKey not loaded: %q", cfg.Agent.OpenAIAPIKey)
+	}
+	if cfg.Agent.OpenAIBaseURL != "http://localhost:11434/v1/" {
+		t.Fatalf("OpenAIBaseURL not loaded: %q", cfg.Agent.OpenAIBaseURL)
+	}
+}
+
 func TestLoadConfigPersistsP2PIdentity(t *testing.T) {
 	t.Setenv("BOOTSTRAP_PEERS", "")
 

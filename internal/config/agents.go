@@ -10,12 +10,15 @@ import (
 
 // AgentProfile holds the persistent configuration for a single agent.
 type AgentProfile struct {
-	Name        string  `yaml:"name"`
-	Description string  `yaml:"description"`
-	Price       float64 `yaml:"price"`
-	Model       string  `yaml:"model,omitempty"`     // falls back to GOOGLE_MODEL env
-	APIKey      string  `yaml:"api_key,omitempty"`   // falls back to GOOGLE_API_KEY env
-	Framework   string  `yaml:"framework,omitempty"` // default: "google-adk"
+	Name          string  `yaml:"name"`
+	Description   string  `yaml:"description"`
+	Price         float64 `yaml:"price"`
+	Model         string  `yaml:"model,omitempty"`          // falls back to GOOGLE_MODEL env
+	APIKey        string  `yaml:"api_key,omitempty"`        // Google API key; falls back to GOOGLE_API_KEY env
+	Framework     string  `yaml:"framework,omitempty"`      // default: "google-adk"
+	Provider      string  `yaml:"provider,omitempty"`       // "google", "openai", or "" for auto-detect
+	OpenAIAPIKey  string  `yaml:"openai_api_key,omitempty"` // OpenAI-compatible API key
+	OpenAIBaseURL string  `yaml:"openai_base_url,omitempty"` // OpenAI-compatible base URL
 }
 
 // AgentsConfig is the top-level structure for agents.yaml.
@@ -132,6 +135,15 @@ func (c *AgentsConfig) UpdateProfile(name string, updates AgentProfile) error {
 	}
 	if updates.Framework != "" {
 		p.Framework = updates.Framework
+	}
+	if updates.Provider != "" {
+		p.Provider = updates.Provider
+	}
+	if updates.OpenAIAPIKey != "" {
+		p.OpenAIAPIKey = updates.OpenAIAPIKey
+	}
+	if updates.OpenAIBaseURL != "" {
+		p.OpenAIBaseURL = updates.OpenAIBaseURL
 	}
 	return nil
 }

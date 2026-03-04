@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/MetaMask/go-did-it v1.0.0-pre1
+	github.com/byebyebruce/adk-go-openai v0.0.0-20251208092515-f5b0ac07643e
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -23,6 +24,7 @@ require (
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/mark3labs/x402-go v0.14.0-beta.1
 	github.com/multiformats/go-multiaddr v0.16.1
+	github.com/sashabaranov/go-openai v1.41.2
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/crypto v0.47.0
 	google.golang.org/adk v0.4.0
