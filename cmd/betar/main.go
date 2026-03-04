@@ -21,6 +21,7 @@ import (
 	"github.com/asabya/betar/internal/ipfs"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
+	"github.com/asabya/betar/internal/session"
 	"github.com/asabya/betar/pkg/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -42,6 +43,7 @@ var (
 	paymentService    *marketplace.PaymentService
 	ipfsClient        *ipfs.Client
 	apiServer         *api.Server
+	sessionStore      *session.Store
 )
 
 var rootCmd = &cobra.Command{
@@ -582,6 +584,12 @@ func initRuntime(cmd *cobra.Command) error {
 		}
 	}
 
+	sessionStore, err = session.NewStore(cfg.Storage.SessionsDir)
+	if err != nil {
+		fmt.Printf("warning: failed to open session store: %v (sessions disabled)\n", err)
+		sessionStore = nil
+	}
+
 	agentManager, err = agent.NewManager(agent.ADKConfig{
 		AppName:       "betar",
 		ModelName:     cfg.Agent.Model,
@@ -589,7 +597,7 @@ func initRuntime(cmd *cobra.Command) error {
 		Provider:      cfg.Agent.Provider,
 		OpenAIAPIKey:  cfg.Agent.OpenAIAPIKey,
 		OpenAIBaseURL: cfg.Agent.OpenAIBaseURL,
-	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr)
+	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr, sessionStore)
 	if err != nil {
 		return fmt.Errorf("failed to create agent manager: %w", err)
 	}
@@ -751,6 +759,9 @@ func shutdownRuntime() {
 	}
 	if p2pHost != nil {
 		_ = p2pHost.Close()
+	}
+	if sessionStore != nil {
+		_ = sessionStore.Close()
 	}
 }
 

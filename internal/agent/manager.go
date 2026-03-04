@@ -20,6 +20,12 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
+// SessionStorer is the interface Manager uses to persist session data.
+// Implemented by *session.Store.
+type SessionStorer interface {
+	AddExchange(ctx context.Context, agentID, callerID string, ex types.Exchange) error
+}
+
 // Manager manages agent lifecycle
 type Manager struct {
 	defaultCfg        ADKConfig
@@ -30,6 +36,7 @@ type Manager struct {
 	listingService    *marketplace.AgentListingService
 	paymentService    *marketplace.PaymentService
 	walletAddress     string
+	sessionStore      SessionStorer
 
 	mu          sync.RWMutex
 	localAgents map[string]*LocalAgent
@@ -48,7 +55,7 @@ type LocalAgent struct {
 }
 
 // NewManager creates a new agent manager
-func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, privKey crypto.PrivKey, paymentSvc *marketplace.PaymentService, walletAddr string) (*Manager, error) {
+func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, privKey crypto.PrivKey, paymentSvc *marketplace.PaymentService, walletAddr string, sessionStore SessionStorer) (*Manager, error) {
 	if ipfsClient == nil {
 		return nil, fmt.Errorf("ipfs client is required")
 	}
@@ -67,6 +74,7 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 		listingService: listingService,
 		paymentService: paymentSvc,
 		walletAddress:  walletAddr,
+		sessionStore:   sessionStore,
 		localAgents:    make(map[string]*LocalAgent),
 	}
 
