@@ -892,38 +892,17 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 	}
 
 	for _, profile := range agentsCfg.Agents {
-		apiKey := profile.APIKey
-		if apiKey == "" {
-			apiKey = cfg.Agent.APIKey
-		}
-		model := profile.Model
-		if model == "" {
-			model = cfg.Agent.Model
-		}
-		provider := profile.Provider
-		if provider == "" {
-			provider = cfg.Agent.Provider
-		}
-		openAIAPIKey := profile.OpenAIAPIKey
-		if openAIAPIKey == "" {
-			openAIAPIKey = cfg.Agent.OpenAIAPIKey
-		}
-		openAIBaseURL := profile.OpenAIBaseURL
-		if openAIBaseURL == "" {
-			openAIBaseURL = cfg.Agent.OpenAIBaseURL
-		}
-
 		registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 			Name:          profile.Name,
 			Description:   profile.Description,
 			Price:         profile.Price,
-			Model:         model,
-			APIKey:        apiKey,
+			Model:         profile.Model,
+			APIKey:        profile.APIKey,
 			X402Support:   true,
 			Services:      []types.Service{{Name: profile.Name, Version: "1.0.0"}},
-			Provider:      provider,
-			OpenAIAPIKey:  openAIAPIKey,
-			OpenAIBaseURL: openAIBaseURL,
+			Provider:      profile.Provider,
+			OpenAIAPIKey:  profile.OpenAIAPIKey,
+			OpenAIBaseURL: profile.OpenAIBaseURL,
 		})
 		if err != nil {
 			fmt.Printf("warning: failed to register agent %q from config: %v\n", profile.Name, err)
