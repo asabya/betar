@@ -146,6 +146,8 @@ bin/betar agent config delete code-helper
 
 See `agents.example.yaml` for the full file format with comments.
 
+> **Security:** `agents.yaml` is stored with `0600` permissions. Prefer environment variables (`GOOGLE_API_KEY`, `OPENAI_API_KEY`) for credentials; the per-agent `api_key` and `openai_api_key` fields are stored in plaintext.
+
 ### Order
 
 ```bash

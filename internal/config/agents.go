@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ func LoadAgentsConfig(dataDir string) (*AgentsConfig, error) {
 	path := AgentsConfigPath(dataDir)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return &AgentsConfig{}, nil
 		}
 		return nil, fmt.Errorf("reading agents config: %w", err)
@@ -44,6 +45,9 @@ func LoadAgentsConfig(dataDir string) (*AgentsConfig, error) {
 	var cfg AgentsConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing agents config: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid agents config: %w", err)
 	}
 	return &cfg, nil
 }
@@ -113,35 +117,3 @@ func (c *AgentsConfig) DeleteProfile(name string) error {
 	return fmt.Errorf("agent profile %q not found", name)
 }
 
-// UpdateProfile merges non-zero fields from updates into the named profile.
-// NOTE: zero values (empty string, 0 price) are treated as "not set" and are
-// silently ignored. The CLI's agentConfigEdit bypasses this by using
-// cmd.Flags().Changed() to detect explicit user input.
-func (c *AgentsConfig) UpdateProfile(name string, updates AgentProfile) error {
-	p := c.FindProfile(name)
-	if p == nil {
-		return fmt.Errorf("agent profile %q not found", name)
-	}
-	if updates.Description != "" {
-		p.Description = updates.Description
-	}
-	if updates.Price != 0 {
-		p.Price = updates.Price
-	}
-	if updates.Model != "" {
-		p.Model = updates.Model
-	}
-	if updates.APIKey != "" {
-		p.APIKey = updates.APIKey
-	}
-	if updates.Provider != "" {
-		p.Provider = updates.Provider
-	}
-	if updates.OpenAIAPIKey != "" {
-		p.OpenAIAPIKey = updates.OpenAIAPIKey
-	}
-	if updates.OpenAIBaseURL != "" {
-		p.OpenAIBaseURL = updates.OpenAIBaseURL
-	}
-	return nil
-}

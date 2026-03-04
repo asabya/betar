@@ -98,45 +98,25 @@ func TestDeleteProfileNotFound(t *testing.T) {
 	}
 }
 
-func TestUpdateProfilePrice(t *testing.T) {
-	t.Parallel()
-	cfg := &AgentsConfig{Agents: []AgentProfile{{Name: "bot", Price: 0.001}}}
-	if err := cfg.UpdateProfile("bot", AgentProfile{Price: 0.005}); err != nil {
-		t.Fatalf("update failed: %v", err)
-	}
-	if cfg.Agents[0].Price != 0.005 {
-		t.Fatalf("expected 0.005, got %f", cfg.Agents[0].Price)
-	}
-}
-
-// TestUpdateProfilePriceZeroIsNoop documents the known limitation of UpdateProfile:
-// setting Price to 0 via UpdateProfile is a no-op due to the zero-value guard.
-// The CLI works around this by using cmd.Flags().Changed() in agentConfigEdit directly.
-func TestUpdateProfilePriceZeroIsNoop(t *testing.T) {
-	t.Parallel()
-	cfg := &AgentsConfig{Agents: []AgentProfile{{Name: "bot", Price: 0.001}}}
-	if err := cfg.UpdateProfile("bot", AgentProfile{Price: 0}); err != nil {
-		t.Fatalf("update failed: %v", err)
-	}
-	// Price stays at 0.001 because UpdateProfile skips zero values.
-	if cfg.Agents[0].Price != 0.001 {
-		t.Fatalf("expected 0.001 (unchanged), got %f", cfg.Agents[0].Price)
-	}
-}
-
-func TestUpdateProfileNotFound(t *testing.T) {
-	t.Parallel()
-	cfg := &AgentsConfig{}
-	if err := cfg.UpdateProfile("ghost", AgentProfile{Description: "x"}); err == nil {
-		t.Fatal("expected error for missing profile, got nil")
-	}
-}
-
 func TestValidateDuplicateNames(t *testing.T) {
 	t.Parallel()
 	cfg := &AgentsConfig{Agents: []AgentProfile{{Name: "dup"}, {Name: "dup"}}}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected validation error for duplicate names, got nil")
+	}
+}
+
+func TestLoadAgentsConfigRejectsDuplicates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agents.yaml")
+	yaml := "agents:\n  - name: bot\n  - name: bot\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	_, err := LoadAgentsConfig(dir)
+	if err == nil {
+		t.Fatal("expected error for duplicate names, got nil")
 	}
 }
 
