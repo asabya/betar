@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/marketplace"
@@ -152,9 +153,20 @@ func executeAgent(args string) []string {
 	if len(parts) < 2 || parts[0] == "" {
 		return []string{"Usage: /agent execute <agent-id> <task>"}
 	}
-	agentID := parts[0]
-	task := parts[1]
-	return []string{fmt.Sprintf("Executing task on agent %s: %s (not implemented)", agentID, task)}
+
+	mgr := getAgentManager()
+	if mgr == nil {
+		return []string{"Agent manager not initialized. Start node first."}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	output, err := mgr.ExecuteTask(ctx, parts[0], parts[1])
+	if err != nil {
+		return []string{fmt.Sprintf("Execution failed: %v", err)}
+	}
+	return []string{fmt.Sprintf("Agent %s result:", parts[0]), output}
 }
 
 func createOrder(args string) []string {
