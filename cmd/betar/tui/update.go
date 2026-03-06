@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asabya/betar/pkg/types"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -30,6 +31,11 @@ type executeResultMsg struct {
 	err     error
 }
 
+type workflowResultMsg struct {
+	workflow *types.Workflow
+	err      error
+}
+
 func executeTaskCmd(agentID, task string) tea.Cmd {
 	return func() tea.Msg {
 		mgr := getAgentManager()
@@ -40,6 +46,24 @@ func executeTaskCmd(agentID, task string) tea.Cmd {
 		defer cancel()
 		output, err := mgr.ExecuteTask(ctx, agentID, task)
 		return executeResultMsg{agentID: agentID, output: output, err: err}
+	}
+}
+
+func tuiWorkflowCreateCmd(agents []string, input string) tea.Cmd {
+	return func() tea.Msg {
+		orch := runtimeOrchestrator
+		if orch == nil {
+			return workflowResultMsg{err: fmt.Errorf("orchestrator not initialized")}
+		}
+		wf, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{AgentIDs: agents, Input: input})
+		if err != nil {
+			return workflowResultMsg{err: err}
+		}
+		result, err := orch.RunWorkflow(context.Background(), wf.ID)
+		if err != nil {
+			return workflowResultMsg{err: err}
+		}
+		return workflowResultMsg{workflow: result}
 	}
 }
 
@@ -208,6 +232,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
 		m.logsViewport.GotoBottom()
 		return m, nil
+	case workflowResultMsg:
+		if msg.err != nil {
+			m.logs = append(m.logs, fmt.Sprintf("[workflow] error: %v", msg.err))
+		} else {
+			wf := msg.workflow
+			m.logs = append(m.logs, fmt.Sprintf("[workflow %s] %s", wf.ID[:8], wf.Status))
+			for _, step := range wf.Steps {
+				status := string(step.Status)
+				line := fmt.Sprintf("  Step %d (%s): %s", step.Index+1, step.AgentID, status)
+				if step.Error != "" {
+					line += " - " + step.Error
+				}
+				m.logs = append(m.logs, line)
+			}
+			if wf.Output != "" {
+				m.logs = append(m.logs, fmt.Sprintf("[workflow] output: %s", truncate(wf.Output, 200)))
+			}
+		}
+		if len(m.logs) > 100 {
+			m.logs = m.logs[len(m.logs)-100:]
+		}
+		m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
+		m.logsViewport.GotoBottom()
+		return m, nil
 	}
 
 	m.cmdInput, cmd = m.cmdInput.Update(msg)
@@ -252,6 +300,21 @@ func (m model) handleCommand() (model, tea.Cmd) {
 			m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
 			m.logsViewport.GotoBottom()
 			return m, executeTaskCmd(agentID, task)
+		}
+	} else if strings.HasPrefix(cmd, "/workflow create ") {
+		args := strings.TrimPrefix(cmd, "/workflow create ")
+		parts := strings.SplitN(args, " ", 2)
+		if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+			m.logs = append(m.logs, "Usage: /workflow create <agent1,agent2,...> <input>")
+		} else {
+			agents := strings.Split(parts[0], ",")
+			m.logs = append(m.logs, fmt.Sprintf("Starting workflow with %d agents...", len(agents)))
+			if len(m.logs) > 100 {
+				m.logs = m.logs[len(m.logs)-100:]
+			}
+			m.logsViewport.SetContent(strings.Join(m.logs, "\n"))
+			m.logsViewport.GotoBottom()
+			return m, tuiWorkflowCreateCmd(agents, parts[1])
 		}
 	} else {
 		result := processCommand(cmd)

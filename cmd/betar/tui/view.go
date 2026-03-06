@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/asabya/betar/pkg/types"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -79,11 +80,34 @@ func buildRightPanelContent(m model) string {
 
 	content += "\n" + TitleStyle.Render("Incoming Tasks") + "\n"
 	if len(m.pendingTasks) == 0 {
-		content += "  (none)"
+		content += "  (none)\n"
 	} else {
 		for _, t := range m.pendingTasks {
 			content += "- " + t + "\n"
 		}
+	}
+
+	content += "\n" + TitleStyle.Render("Active Workflows") + "\n"
+	if orch := runtimeOrchestrator; orch != nil {
+		workflows := orch.ListWorkflows()
+		active := 0
+		for _, wf := range workflows {
+			if wf.Status == types.WorkflowStatusRunning || wf.Status == types.WorkflowStatusPending {
+				completed := 0
+				for _, s := range wf.Steps {
+					if s.Status == types.StepStatusCompleted {
+						completed++
+					}
+				}
+				content += fmt.Sprintf("  %s: %d/%d steps\n", wf.ID[:8], completed, len(wf.Steps))
+				active++
+			}
+		}
+		if active == 0 {
+			content += "  (none)\n"
+		}
+	} else {
+		content += "  (none)\n"
 	}
 
 	return content

@@ -22,6 +22,7 @@ import (
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/internal/session"
+	"github.com/asabya/betar/internal/workflow"
 	"github.com/asabya/betar/pkg/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -75,6 +76,9 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	tui.SetWallet(deriveWalletAddress(cfg.Ethereum.PrivateKey))
 	tui.SetDataDir(cfg.Storage.DataDir)
 	tui.SetSessionStore(sessionStore)
+
+	orch := workflow.NewOrchestrator(agentManager)
+	tui.SetOrchestrator(orch)
 
 	// Redirect stdout into the TUI log panel.
 	origStdout := os.Stdout
