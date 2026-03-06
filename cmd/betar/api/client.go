@@ -69,6 +69,31 @@ func (c *Client) Post(path string, body interface{}, result interface{}) error {
 	return nil
 }
 
+func (c *Client) Delete(path string, result interface{}) error {
+	req, err := http.NewRequest(http.MethodDelete, c.BaseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	if result != nil {
+		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+	return nil
+}
+
 // PaymentRequiredError is returned when a 402 Payment Required is received
 type PaymentRequiredError struct {
 	AgentID            string      `json:"agent_id"`

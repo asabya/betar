@@ -235,6 +235,35 @@ var walletBalanceCmd = &cobra.Command{
 	RunE:  checkBalance,
 }
 
+var workflowCmd = &cobra.Command{
+	Use:   "workflow",
+	Short: "Manage workflows",
+}
+
+var workflowCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create and run a workflow",
+	RunE:  createWorkflow,
+}
+
+var workflowStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check workflow status",
+	RunE:  getWorkflowStatus,
+}
+
+var workflowListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List workflows",
+	RunE:  listWorkflows,
+}
+
+var workflowCancelCmd = &cobra.Command{
+	Use:   "cancel",
+	Short: "Cancel a running workflow",
+	RunE:  cancelWorkflow,
+}
+
 func init() {
 	// Node flags
 	nodeCmd.Flags().IntP("port", "p", 4001, "Port to listen on")
@@ -315,6 +344,22 @@ func init() {
 	// Wallet balance flags
 	walletBalanceCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
 
+	// Workflow create flags
+	workflowCreateCmd.Flags().String("chain", "", "Comma-separated agent IDs")
+	workflowCreateCmd.Flags().String("input", "", "Initial input for the workflow")
+	workflowCreateCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
+
+	// Workflow status flags
+	workflowStatusCmd.Flags().String("id", "", "Workflow ID")
+	workflowStatusCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
+
+	// Workflow list flags
+	workflowListCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
+
+	// Workflow cancel flags
+	workflowCancelCmd.Flags().String("id", "", "Workflow ID")
+	workflowCancelCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
+
 	// TUI flags — same as startCmd but all optional
 	rootCmd.Flags().IntP("port", "p", 4001, "Port to listen on")
 	rootCmd.Flags().StringSlice("bootstrap", []string{}, "Bootstrap peers")
@@ -343,6 +388,9 @@ func init() {
 	agentCmd.AddCommand(agentServeCmd)
 	agentCmd.AddCommand(agentConfigCmd)
 	agentConfigCmd.AddCommand(agentConfigListCmd, agentConfigAddCmd, agentConfigDeleteCmd, agentConfigEditCmd)
+
+	rootCmd.AddCommand(workflowCmd)
+	workflowCmd.AddCommand(workflowCreateCmd, workflowStatusCmd, workflowListCmd, workflowCancelCmd)
 
 	orderCmd.AddCommand(orderCreateCmd)
 	walletCmd.AddCommand(walletBalanceCmd)
@@ -1098,6 +1146,131 @@ func checkBalance(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Address: %s\n", resp.Address)
 	fmt.Printf("Balance: %f ETH\n", resp.Balance)
+
+	return nil
+}
+
+func createWorkflow(cmd *cobra.Command, args []string) error {
+	chain, _ := cmd.Flags().GetString("chain")
+	input, _ := cmd.Flags().GetString("input")
+
+	if chain == "" {
+		return fmt.Errorf("--chain is required (comma-separated agent IDs)")
+	}
+	if input == "" {
+		return fmt.Errorf("--input is required")
+	}
+
+	agentIDs := strings.Split(chain, ",")
+	for i := range agentIDs {
+		agentIDs[i] = strings.TrimSpace(agentIDs[i])
+	}
+
+	apiURL, _ := cmd.Flags().GetString("api-url")
+	client := api.NewClient(apiURL)
+
+	var wf types.Workflow
+	body := types.WorkflowDefinition{
+		AgentIDs: agentIDs,
+		Input:    input,
+	}
+	if err := client.Post("/workflows", body, &wf); err != nil {
+		return err
+	}
+
+	fmt.Printf("Workflow created: %s\n", wf.ID)
+	fmt.Printf("Status: %s\n", wf.Status)
+	fmt.Printf("Steps:\n")
+	for _, step := range wf.Steps {
+		fmt.Printf("  %d. agent=%s status=%s\n", step.Index, step.AgentID, step.Status)
+	}
+
+	return nil
+}
+
+func getWorkflowStatus(cmd *cobra.Command, args []string) error {
+	id, _ := cmd.Flags().GetString("id")
+	if id == "" {
+		return fmt.Errorf("--id is required")
+	}
+
+	apiURL, _ := cmd.Flags().GetString("api-url")
+	client := api.NewClient(apiURL)
+
+	var wf types.Workflow
+	if err := client.Get(fmt.Sprintf("/workflows/%s", id), &wf); err != nil {
+		return err
+	}
+
+	fmt.Printf("Workflow: %s\n", wf.ID)
+	fmt.Printf("Status: %s\n", wf.Status)
+	fmt.Printf("Input: %s\n", wf.Input)
+	if wf.Output != "" {
+		fmt.Printf("Output: %s\n", wf.Output)
+	}
+	fmt.Printf("Cost: %s\n", wf.TotalCost)
+	fmt.Printf("Created: %s\n", wf.CreatedAt.Format(time.RFC3339))
+	fmt.Printf("Updated: %s\n", wf.UpdatedAt.Format(time.RFC3339))
+	if wf.CompletedAt != nil {
+		fmt.Printf("Completed: %s\n", wf.CompletedAt.Format(time.RFC3339))
+	}
+	fmt.Printf("Steps:\n")
+	for _, step := range wf.Steps {
+		line := fmt.Sprintf("  %d. agent=%s status=%s", step.Index, step.AgentID, step.Status)
+		if step.Error != "" {
+			line += fmt.Sprintf(" error=%q", step.Error)
+		}
+		if step.Output != "" {
+			line += fmt.Sprintf(" output=%q", step.Output)
+		}
+		fmt.Println(line)
+	}
+
+	return nil
+}
+
+func listWorkflows(cmd *cobra.Command, args []string) error {
+	apiURL, _ := cmd.Flags().GetString("api-url")
+	client := api.NewClient(apiURL)
+
+	var workflows []*types.Workflow
+	if err := client.Get("/workflows", &workflows); err != nil {
+		return err
+	}
+
+	if len(workflows) == 0 {
+		fmt.Println("No workflows found")
+		return nil
+	}
+
+	fmt.Printf("%-36s  %-10s  %-5s  %s\n", "ID", "STATUS", "STEPS", "INPUT")
+	for _, wf := range workflows {
+		input := wf.Input
+		if len(input) > 40 {
+			input = input[:37] + "..."
+		}
+		fmt.Printf("%-36s  %-10s  %-5d  %s\n", wf.ID, wf.Status, len(wf.Steps), input)
+	}
+
+	return nil
+}
+
+func cancelWorkflow(cmd *cobra.Command, args []string) error {
+	id, _ := cmd.Flags().GetString("id")
+	if id == "" {
+		return fmt.Errorf("--id is required")
+	}
+
+	apiURL, _ := cmd.Flags().GetString("api-url")
+	client := api.NewClient(apiURL)
+
+	var wf types.Workflow
+	if err := client.Delete(fmt.Sprintf("/workflows/%s", id), &wf); err != nil {
+		return err
+	}
+
+	fmt.Printf("Workflow %s canceled\n", wf.ID)
+	fmt.Printf("Status: %s\n", wf.Status)
 
 	return nil
 }
