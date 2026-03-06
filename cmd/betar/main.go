@@ -110,7 +110,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		}
 
 		apiPort, _ := cmd.Flags().GetInt("api-port")
-		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore)
+		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch)
 		if err := apiServer.Start(); err != nil {
 			fmt.Printf("warning: failed to start API server: %v\n", err)
 		} else {
@@ -528,8 +528,10 @@ func runStart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("warning: %v\n", err)
 	}
 
+	orch := workflow.NewOrchestrator(agentManager)
+
 	apiPort, _ := cmd.Flags().GetInt("api-port")
-	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore)
+	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch)
 	if err := apiServer.Start(); err != nil {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}

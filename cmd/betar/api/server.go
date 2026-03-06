@@ -10,6 +10,7 @@ import (
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
+	"github.com/asabya/betar/internal/workflow"
 	"github.com/gorilla/mux"
 )
 
@@ -19,7 +20,7 @@ type Server struct {
 	paymentService *marketplace.PaymentService
 }
 
-func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier) *Server {
+func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier, orch *workflow.Orchestrator) *Server {
 	r := mux.NewRouter()
 
 	// Add handlers
@@ -27,6 +28,9 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	handlers.RegisterWalletHandlers(r)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
 	handlers.RegisterSessionHandlers(r, sessionStore)
+	if orch != nil {
+		handlers.RegisterWorkflowHandlers(r, orch)
+	}
 
 	// Health check
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
