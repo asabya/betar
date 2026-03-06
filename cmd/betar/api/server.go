@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/internal/workflow"
+	"github.com/asabya/betar/pkg/a2a"
 	"github.com/gorilla/mux"
 )
 
@@ -30,6 +32,21 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	handlers.RegisterSessionHandlers(r, sessionStore)
 	if orch != nil {
 		handlers.RegisterWorkflowHandlers(r, orch)
+	}
+
+	// A2A Agent Card discovery
+	if listingSvc != nil {
+		r.HandleFunc("/.well-known/agent.json", func(w http.ResponseWriter, r *http.Request) {
+			listings := listingSvc.ListListings()
+			var cards []*a2a.AgentCard
+			for _, l := range listings {
+				if l != nil {
+					cards = append(cards, a2a.AgentListingToAgentCard(l))
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(cards)
+		}).Methods("GET")
 	}
 
 	// Health check
