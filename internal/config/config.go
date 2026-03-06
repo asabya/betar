@@ -61,6 +61,7 @@ type StorageConfig struct {
 	DataDir       string
 	P2PKeyPath    string
 	WalletKeyPath string
+	SessionsDir   string // base dir for session store (NewStore appends /sessions)
 }
 
 // LoadConfig loads configuration from environment
@@ -99,6 +100,7 @@ func LoadConfig() (*Config, error) {
 	cfg.Storage.DataDir = dataDir
 	cfg.Storage.P2PKeyPath = keyPath
 	cfg.Storage.WalletKeyPath = walletKeyPath
+	cfg.Storage.SessionsDir = dataDir
 
 	// If no private key from env, load or generate wallet key
 	if cfg.Ethereum.PrivateKey == "" {

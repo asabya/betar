@@ -19,13 +19,14 @@ type Server struct {
 	paymentService *marketplace.PaymentService
 }
 
-func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService) *Server {
+func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier) *Server {
 	r := mux.NewRouter()
 
 	// Add handlers
 	handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
 	handlers.RegisterWalletHandlers(r)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
+	handlers.RegisterSessionHandlers(r, sessionStore)
 
 	// Health check
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

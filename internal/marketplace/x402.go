@@ -59,6 +59,7 @@ type X402Request struct {
 	Method        string               `json:"method"`
 	Payment       *X402PaymentEnvelope `json:"payment"`
 	Body          []byte               `json:"body"`
+	CallerDID     string               `json:"caller_did,omitempty"`
 }
 
 // X402PaymentRequired is sent server → client when payment is required (analogous to HTTP 402).
@@ -69,6 +70,7 @@ type X402PaymentRequired struct {
 	ChallengeExpiresAt  int64                `json:"challenge_expires_at"`
 	PaymentRequirements *PaymentRequirements `json:"payment_requirements"`
 	Message             string               `json:"message"`
+	SellerDID           string               `json:"seller_did,omitempty"`
 }
 
 // X402PaidRequest is sent client → server with a signed payment attached.
@@ -77,6 +79,7 @@ type X402PaidRequest struct {
 	CorrelationID string              `json:"correlation_id"`
 	Payment       X402PaymentEnvelope `json:"payment"`
 	Body          []byte              `json:"body"`
+	CallerDID     string              `json:"caller_did,omitempty"`
 }
 
 // X402Response is sent server → client on successful execution.
@@ -86,6 +89,7 @@ type X402Response struct {
 	PaymentID     string `json:"payment_id"`
 	TxHash        string `json:"tx_hash"`
 	Body          []byte `json:"body"`
+	SellerDID     string `json:"seller_did,omitempty"`
 }
 
 // X402Error is sent server → client when a typed error occurs.
