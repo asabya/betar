@@ -26,6 +26,10 @@ type SessionStorer interface {
 	AddExchange(ctx context.Context, agentID, callerID string, ex types.Exchange) error
 }
 
+type ctxKey string
+
+const ctxKeySkipSession ctxKey = "skipSession"
+
 // Manager manages agent lifecycle
 type Manager struct {
 	defaultCfg        ADKConfig
@@ -37,6 +41,7 @@ type Manager struct {
 	paymentService    *marketplace.PaymentService
 	walletAddress     string
 	sessionStore      SessionStorer
+	nodeDID           string // this node's DID (did:key:xxx) for identifying as caller
 
 	mu          sync.RWMutex
 	localAgents map[string]*LocalAgent
@@ -75,6 +80,7 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 		paymentService: paymentSvc,
 		walletAddress:  walletAddr,
 		sessionStore:   sessionStore,
+		nodeDID:        GenerateDID(privKey, runtimeCfg.AppName, "node"),
 		localAgents:    make(map[string]*LocalAgent),
 	}
 
@@ -204,7 +210,7 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID, input string) (strin
 
 		fmt.Printf("[ExecuteTask] Local execution successful, output length: %d\n", len(result.Output))
 
-		if m.sessionStore != nil {
+		if m.sessionStore != nil && ctx.Value(ctxKeySkipSession) == nil {
 			ex := types.Exchange{
 				RequestID: requestID,
 				Input:     input,
@@ -464,7 +470,11 @@ func (m *Manager) handleX402Request(ctx context.Context, from peer.ID, _ string,
 
 	// No payment — free agent, execute directly.
 	if price == 0 {
-		return m.executeAndRespond(ctx, req.CorrelationID, req.Resource, req.Body, from.String())
+		callerID := req.CallerDID
+		if callerID == "" {
+			callerID = from.String()
+		}
+		return m.executeAndRespond(ctx, req.CorrelationID, req.Resource, req.Body, callerID)
 	}
 
 	// Payment required: generate challenge nonce.
@@ -493,6 +503,7 @@ func (m *Manager) handleX402Request(ctx context.Context, from peer.ID, _ string,
 		ChallengeExpiresAt:  challenge.ExpiresAt.Unix(),
 		PaymentRequirements: payReq,
 		Message:             "Payment required",
+		SellerDID:           req.Resource,
 	}
 	respData, err := json.Marshal(pr)
 	if err != nil {
@@ -573,9 +584,14 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 
 	fmt.Printf("[handleX402PaidRequest] payment settled txHash=%s\n", txHash)
 
-	output, err := m.ExecuteTask(ctx, resource, bodyPayload.Input)
+	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), resource, bodyPayload.Input)
 	if err != nil {
 		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
+	}
+
+	callerID := req.CallerDID
+	if callerID == "" {
+		callerID = from.String()
 	}
 
 	if m.sessionStore != nil {
@@ -592,7 +608,7 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 				PaidAt:    time.Now().UTC(),
 			},
 		}
-		_ = m.sessionStore.AddExchange(ctx, resource, from.String(), ex)
+		_ = m.sessionStore.AddExchange(ctx, resource, callerID, ex)
 	}
 
 	respBody, _ := json.Marshal(map[string]string{"output": output})
@@ -602,6 +618,7 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 		PaymentID:     header.PaymentID,
 		TxHash:        txHash,
 		Body:          respBody,
+		SellerDID:     resource,
 	}
 	respData, err := json.Marshal(resp)
 	if err != nil {
@@ -634,9 +651,14 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 		_ = json.Unmarshal(req.Body, &bodyPayload)
 	}
 
-	output, err := m.ExecuteTask(ctx, req.Resource, bodyPayload.Input)
+	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), req.Resource, bodyPayload.Input)
 	if err != nil {
 		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
+	}
+
+	callerID := req.CallerDID
+	if callerID == "" {
+		callerID = from.String()
 	}
 
 	if m.sessionStore != nil {
@@ -653,7 +675,7 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 				PaidAt:    time.Now().UTC(),
 			},
 		}
-		_ = m.sessionStore.AddExchange(ctx, req.Resource, from.String(), ex)
+		_ = m.sessionStore.AddExchange(ctx, req.Resource, callerID, ex)
 	}
 
 	respBody, _ := json.Marshal(map[string]string{"output": output})
@@ -663,6 +685,7 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 		PaymentID:     header.PaymentID,
 		TxHash:        txHash,
 		Body:          respBody,
+		SellerDID:     req.Resource,
 	}
 	respData, _ := json.Marshal(resp)
 	return marketplace.MsgTypeX402Response, respData, nil
@@ -677,7 +700,7 @@ func (m *Manager) executeAndRespond(ctx context.Context, correlationID, resource
 		_ = json.Unmarshal(rawBody, &bodyPayload)
 	}
 
-	output, err := m.ExecuteTask(ctx, resource, bodyPayload.Input)
+	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), resource, bodyPayload.Input)
 	if err != nil {
 		return sendX402Error(correlationID, marketplace.ErrExecutionFailed, err.Error())
 	}
@@ -697,6 +720,7 @@ func (m *Manager) executeAndRespond(ctx context.Context, correlationID, resource
 		Version:       marketplace.X402LibP2PVersion,
 		CorrelationID: correlationID,
 		Body:          respBody,
+		SellerDID:     resource,
 	}
 	respData, _ := json.Marshal(resp)
 	return marketplace.MsgTypeX402Response, respData, nil
@@ -721,6 +745,7 @@ func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID
 		Method:        "execute",
 		Payment:       nil,
 		Body:          bodyBytes,
+		CallerDID:     m.nodeDID,
 	}
 	reqData, err := json.Marshal(req)
 	if err != nil {
@@ -743,7 +768,7 @@ func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID
 				Output:    output,
 				Timestamp: time.Now().UTC(),
 			}
-			_ = m.sessionStore.AddExchange(ctx, agentID, peerID.String(), ex)
+			_ = m.sessionStore.AddExchange(ctx, agentID, m.nodeDID, ex)
 		}
 		return output, err
 
@@ -769,6 +794,7 @@ func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID
 			CorrelationID: correlationID,
 			Payment:       env,
 			Body:          bodyBytes,
+			CallerDID:     m.nodeDID,
 		}
 		paidData, err := json.Marshal(paidReq)
 		if err != nil {
@@ -800,7 +826,7 @@ func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID
 						PaidAt:    time.Now().UTC(),
 					},
 				}
-				_ = m.sessionStore.AddExchange(ctx, agentID, peerID.String(), ex)
+				_ = m.sessionStore.AddExchange(ctx, agentID, m.nodeDID, ex)
 			}
 			return output, err
 		case marketplace.MsgTypeX402Error:
