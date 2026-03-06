@@ -6,7 +6,7 @@ import "time"
 type Session struct {
 	ID        string     `json:"id"`
 	AgentID   string     `json:"agentId"`
-	CallerID  string     `json:"callerId"` // peer.ID string or "local"
+	CallerID  string     `json:"callerId"` // did:key DID of the caller, or "local" for local execution
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	Exchanges []Exchange `json:"exchanges"`
