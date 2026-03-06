@@ -309,35 +309,38 @@ func sanitizeAgentName(name string) string {
 	return result
 }
 
-// generateAgentDID generates a deterministic DID from the agent name and libp2p private key.
-// Uses Ed25519 key derivation to create a consistent agent ID on every run.
-func (r *ADKRuntime) generateAgentDID(agentName string) string {
-	if r.privKey == nil {
-		// Fallback to UUID if no private key available
-		return uuid.NewString()
+// GenerateDID generates a deterministic did:key from a libp2p private key and a name.
+// Uses SHA256(appName/name/pubBytes) as an Ed25519 seed to derive the DID.
+// Returns "" on failure.
+func GenerateDID(privKey p2pcrypto.PrivKey, appName, name string) string {
+	if privKey == nil {
+		return ""
 	}
 
-	// Get the public key from the private key
-	pubKey := r.privKey.GetPublic()
+	pubKey := privKey.GetPublic()
 	pubBytes, err := pubKey.Raw()
 	if err != nil {
-		// Fallback to UUID if we can't get raw public key
-		return uuid.NewString()
+		return ""
 	}
 
-	// Derive a seed from: appName + agentName + public key
-	derivationInput := r.appName + "/" + agentName + "/" + string(pubBytes)
+	derivationInput := appName + "/" + name + "/" + string(pubBytes)
 	hash := sha256.Sum256([]byte(derivationInput))
 	seed := hash[:32]
 
-	// Create Ed25519 private key from seed
 	edPrivKey, err := ed25519.PrivateKeyFromSeed(seed)
 	if err != nil {
-		// Fallback to UUID if derivation fails
-		return uuid.NewString()
+		return ""
 	}
 
-	// Generate DID from the derived Ed25519 key
 	did := didkeyctl.FromPrivateKey(edPrivKey)
 	return did.String()
+}
+
+// generateAgentDID generates a deterministic DID from the agent name and libp2p private key.
+func (r *ADKRuntime) generateAgentDID(agentName string) string {
+	did := GenerateDID(r.privKey, r.appName, agentName)
+	if did == "" {
+		return uuid.NewString()
+	}
+	return did
 }
