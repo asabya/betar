@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -36,16 +37,16 @@ func (h *workflowHandler) createWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Run the workflow synchronously and return the final state.
-	result, err := h.orch.RunWorkflow(r.Context(), wf.ID)
-	if err != nil {
+	// Run the workflow asynchronously so it survives HTTP timeouts.
+	// Use a detached context — the workflow must not be canceled when
+	// the HTTP request completes.
+	if err := h.orch.RunWorkflowAsync(context.Background(), wf.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(result)
+	json.NewEncoder(w).Encode(wf)
 }
 
 func (h *workflowHandler) listWorkflows(w http.ResponseWriter, r *http.Request) {

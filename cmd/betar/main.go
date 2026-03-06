@@ -1186,9 +1186,26 @@ func createWorkflow(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Workflow created: %s\n", wf.ID)
 	fmt.Printf("Status: %s\n", wf.Status)
+
+	// Poll until workflow completes (or fails/cancels).
+	for wf.Status == types.WorkflowStatusPending || wf.Status == types.WorkflowStatusRunning {
+		time.Sleep(1 * time.Second)
+		if err := client.Get(fmt.Sprintf("/workflows/%s", wf.ID), &wf); err != nil {
+			return err
+		}
+	}
+
+	fmt.Printf("Final status: %s\n", wf.Status)
 	fmt.Printf("Steps:\n")
 	for _, step := range wf.Steps {
-		fmt.Printf("  %d. agent=%s status=%s\n", step.Index, step.AgentID, step.Status)
+		line := fmt.Sprintf("  %d. agent=%s status=%s", step.Index+1, step.AgentID, step.Status)
+		if step.Error != "" {
+			line += " error=" + step.Error
+		}
+		fmt.Println(line)
+	}
+	if wf.Output != "" {
+		fmt.Printf("Output: %s\n", wf.Output)
 	}
 
 	return nil
