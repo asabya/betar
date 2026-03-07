@@ -18,18 +18,18 @@ type TaskExecutor interface {
 
 // Orchestrator manages workflow creation, execution, and lifecycle.
 type Orchestrator struct {
-	executor  TaskExecutor
-	mu        sync.RWMutex
-	workflows map[string]*types.Workflow
-	cancels   map[string]context.CancelFunc
+	executor TaskExecutor
+	store    WorkflowStore
+	mu       sync.RWMutex
+	cancels  map[string]context.CancelFunc
 }
 
-// NewOrchestrator creates an Orchestrator backed by the given TaskExecutor.
-func NewOrchestrator(executor TaskExecutor) *Orchestrator {
+// NewOrchestrator creates an Orchestrator backed by the given TaskExecutor and WorkflowStore.
+func NewOrchestrator(executor TaskExecutor, store WorkflowStore) *Orchestrator {
 	return &Orchestrator{
-		executor:  executor,
-		workflows: make(map[string]*types.Workflow),
-		cancels:   make(map[string]context.CancelFunc),
+		executor: executor,
+		store:    store,
+		cancels:  make(map[string]context.CancelFunc),
 	}
 }
 
@@ -60,9 +60,9 @@ func (o *Orchestrator) CreateWorkflow(ctx context.Context, def types.WorkflowDef
 		}
 	}
 
-	o.mu.Lock()
-	o.workflows[wf.ID] = wf
-	o.mu.Unlock()
+	if err := o.store.Save(ctx, wf); err != nil {
+		return nil, fmt.Errorf("save workflow: %w", err)
+	}
 
 	return copyWorkflow(wf), nil
 }
@@ -71,24 +71,23 @@ func (o *Orchestrator) CreateWorkflow(ctx context.Context, def types.WorkflowDef
 // input to the next. It respects context cancellation and the CancelWorkflow
 // flag between steps.
 func (o *Orchestrator) RunWorkflow(ctx context.Context, workflowID string) (*types.Workflow, error) {
-	o.mu.Lock()
-	wf, ok := o.workflows[workflowID]
-	if !ok {
-		o.mu.Unlock()
-		return nil, fmt.Errorf("workflow %s not found", workflowID)
+	wf, err := o.store.Get(ctx, workflowID)
+	if err != nil {
+		return nil, err
 	}
 	if wf.Status != types.WorkflowStatusPending {
-		o.mu.Unlock()
 		return nil, fmt.Errorf("workflow %s is not pending (status: %s)", workflowID, wf.Status)
 	}
 
 	// Set up a cancellable context so CancelWorkflow can stop execution.
 	ctx, cancel := context.WithCancel(ctx)
+	o.mu.Lock()
 	o.cancels[workflowID] = cancel
+	o.mu.Unlock()
 
 	wf.Status = types.WorkflowStatusRunning
 	wf.UpdatedAt = time.Now()
-	o.mu.Unlock()
+	_ = o.store.Save(ctx, wf)
 
 	defer func() {
 		o.mu.Lock()
@@ -103,29 +102,26 @@ func (o *Orchestrator) RunWorkflow(ctx context.Context, workflowID string) (*typ
 		// Check for cancellation before starting each step.
 		select {
 		case <-ctx.Done():
-			o.mu.Lock()
 			o.skipRemaining(wf, i)
 			wf.Status = types.WorkflowStatusCanceled
 			now := time.Now()
 			wf.CompletedAt = &now
 			wf.UpdatedAt = now
-			o.mu.Unlock()
+			_ = o.store.Save(context.Background(), wf)
 			return copyWorkflow(wf), nil
 		default:
 		}
 
 		now := time.Now()
-		o.mu.Lock()
 		wf.Steps[i].Status = types.StepStatusRunning
 		wf.Steps[i].Input = input
 		wf.Steps[i].StartedAt = &now
 		wf.UpdatedAt = now
-		o.mu.Unlock()
+		_ = o.store.Save(ctx, wf)
 
 		output, err := o.executor.ExecuteTask(ctx, wf.Steps[i].AgentID, input)
 
 		now = time.Now()
-		o.mu.Lock()
 		if err != nil {
 			wf.Steps[i].Status = types.StepStatusFailed
 			wf.Steps[i].Error = err.Error()
@@ -134,7 +130,7 @@ func (o *Orchestrator) RunWorkflow(ctx context.Context, workflowID string) (*typ
 			wf.Status = types.WorkflowStatusFailed
 			wf.CompletedAt = &now
 			wf.UpdatedAt = now
-			o.mu.Unlock()
+			_ = o.store.Save(context.Background(), wf)
 			return copyWorkflow(wf), nil
 		}
 
@@ -142,36 +138,31 @@ func (o *Orchestrator) RunWorkflow(ctx context.Context, workflowID string) (*typ
 		wf.Steps[i].Output = output
 		wf.Steps[i].CompletedAt = &now
 		wf.UpdatedAt = now
-		o.mu.Unlock()
+		_ = o.store.Save(ctx, wf)
 
 		// Pipe output to the next step.
 		input = output
 	}
 
-	o.mu.Lock()
 	now := time.Now()
 	wf.Output = input
 	wf.Status = types.WorkflowStatusCompleted
 	wf.CompletedAt = &now
 	wf.UpdatedAt = now
-	o.mu.Unlock()
+	_ = o.store.Save(ctx, wf)
 
 	return copyWorkflow(wf), nil
 }
 
 // RunWorkflowAsync starts RunWorkflow in a background goroutine.
 func (o *Orchestrator) RunWorkflowAsync(ctx context.Context, workflowID string) error {
-	o.mu.RLock()
-	wf, ok := o.workflows[workflowID]
-	if !ok {
-		o.mu.RUnlock()
-		return fmt.Errorf("workflow %s not found", workflowID)
+	wf, err := o.store.Get(ctx, workflowID)
+	if err != nil {
+		return err
 	}
 	if wf.Status != types.WorkflowStatusPending {
-		o.mu.RUnlock()
 		return fmt.Errorf("workflow %s is not pending (status: %s)", workflowID, wf.Status)
 	}
-	o.mu.RUnlock()
 
 	go func() {
 		_, _ = o.RunWorkflow(ctx, workflowID)
@@ -180,43 +171,28 @@ func (o *Orchestrator) RunWorkflowAsync(ctx context.Context, workflowID string) 
 }
 
 // GetWorkflow returns a snapshot copy of the workflow.
-func (o *Orchestrator) GetWorkflow(workflowID string) (*types.Workflow, error) {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-
-	wf, ok := o.workflows[workflowID]
-	if !ok {
-		return nil, fmt.Errorf("workflow %s not found", workflowID)
-	}
-	return copyWorkflow(wf), nil
+func (o *Orchestrator) GetWorkflow(ctx context.Context, workflowID string) (*types.Workflow, error) {
+	return o.store.Get(ctx, workflowID)
 }
 
 // ListWorkflows returns snapshot copies of all workflows.
-func (o *Orchestrator) ListWorkflows() []*types.Workflow {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-
-	result := make([]*types.Workflow, 0, len(o.workflows))
-	for _, wf := range o.workflows {
-		result = append(result, copyWorkflow(wf))
-	}
-	return result
+func (o *Orchestrator) ListWorkflows(ctx context.Context) ([]*types.Workflow, error) {
+	return o.store.List(ctx)
 }
 
 // CancelWorkflow signals the running workflow to stop between steps.
-func (o *Orchestrator) CancelWorkflow(workflowID string) error {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-
-	wf, ok := o.workflows[workflowID]
-	if !ok {
-		return fmt.Errorf("workflow %s not found", workflowID)
+func (o *Orchestrator) CancelWorkflow(ctx context.Context, workflowID string) error {
+	wf, err := o.store.Get(ctx, workflowID)
+	if err != nil {
+		return err
 	}
 	if wf.Status != types.WorkflowStatusRunning {
 		return fmt.Errorf("workflow %s is not running (status: %s)", workflowID, wf.Status)
 	}
 
+	o.mu.RLock()
 	cancel, ok := o.cancels[workflowID]
+	o.mu.RUnlock()
 	if ok {
 		cancel()
 	}

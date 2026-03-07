@@ -62,7 +62,7 @@ func TestThreeStepChainPipesOutput(t *testing.T) {
 		return input + "+out3", nil
 	})
 
-	orch := NewOrchestrator(exec)
+	orch := NewOrchestrator(exec, NewMemoryStore())
 	wf, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{
 		AgentIDs: []string{"agent-1", "agent-2", "agent-3"},
 		Input:    "seed",
@@ -118,7 +118,7 @@ func TestStepFailureSkipsRemaining(t *testing.T) {
 		return "should-not-run", nil
 	})
 
-	orch := NewOrchestrator(exec)
+	orch := NewOrchestrator(exec, NewMemoryStore())
 	wf, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{
 		AgentIDs: []string{"agent-1", "agent-2", "agent-3"},
 		Input:    "start",
@@ -167,7 +167,7 @@ func TestCancelMidWorkflow(t *testing.T) {
 		return "should-not-run", nil
 	})
 
-	orch := NewOrchestrator(exec)
+	orch := NewOrchestrator(exec, NewMemoryStore())
 	wf, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{
 		AgentIDs: []string{"agent-1", "agent-2", "agent-3"},
 		Input:    "go",
@@ -190,7 +190,7 @@ func TestCancelMidWorkflow(t *testing.T) {
 		t.Fatal("timed out waiting for step 2 to start")
 	}
 
-	if err := orch.CancelWorkflow(wf.ID); err != nil {
+	if err := orch.CancelWorkflow(context.Background(), wf.ID); err != nil {
 		t.Fatalf("CancelWorkflow: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestSingleStepWorkflow(t *testing.T) {
 		return "result-" + input, nil
 	})
 
-	orch := NewOrchestrator(exec)
+	orch := NewOrchestrator(exec, NewMemoryStore())
 	wf, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{
 		AgentIDs: []string{"solo"},
 		Input:    "ping",
@@ -249,7 +249,7 @@ func TestSingleStepWorkflow(t *testing.T) {
 
 func TestEmptyChainRejected(t *testing.T) {
 	exec := newMockExecutor()
-	orch := NewOrchestrator(exec)
+	orch := NewOrchestrator(exec, NewMemoryStore())
 
 	_, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{
 		AgentIDs: []string{},
@@ -262,7 +262,7 @@ func TestEmptyChainRejected(t *testing.T) {
 
 func TestEmptyInputRejected(t *testing.T) {
 	exec := newMockExecutor()
-	orch := NewOrchestrator(exec)
+	orch := NewOrchestrator(exec, NewMemoryStore())
 
 	_, err := orch.CreateWorkflow(context.Background(), types.WorkflowDefinition{
 		AgentIDs: []string{"agent-1"},
