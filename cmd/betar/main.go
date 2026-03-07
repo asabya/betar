@@ -45,6 +45,7 @@ var (
 	ipfsClient        *ipfs.Client
 	apiServer         *api.Server
 	sessionStore      *session.Store
+	workflowStore     *workflow.LevelDBStore
 )
 
 var rootCmd = &cobra.Command{
@@ -77,7 +78,13 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	tui.SetDataDir(cfg.Storage.DataDir)
 	tui.SetSessionStore(sessionStore)
 
-	orch := workflow.NewOrchestrator(agentManager)
+	var wfStoreErr error
+	workflowStore, wfStoreErr = workflow.NewLevelDBStore(cfg.Storage.DataDir)
+	if wfStoreErr != nil {
+		return fmt.Errorf("failed to open workflow store: %w", wfStoreErr)
+	}
+
+	orch := workflow.NewOrchestrator(agentManager, workflowStore)
 	tui.SetOrchestrator(orch)
 
 	// Redirect stdout into the TUI log panel.
@@ -110,7 +117,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		}
 
 		apiPort, _ := cmd.Flags().GetInt("api-port")
-		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch)
+		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch, deriveWalletAddress(cfg.Ethereum.PrivateKey), cfg.Storage.DataDir)
 		if err := apiServer.Start(); err != nil {
 			fmt.Printf("warning: failed to start API server: %v\n", err)
 		} else {
@@ -528,10 +535,18 @@ func runStart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("warning: %v\n", err)
 	}
 
-	orch := workflow.NewOrchestrator(agentManager)
+	{
+		var err error
+		workflowStore, err = workflow.NewLevelDBStore(cfg.Storage.DataDir)
+		if err != nil {
+			return fmt.Errorf("failed to open workflow store: %w", err)
+		}
+	}
+
+	orch := workflow.NewOrchestrator(agentManager, workflowStore)
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
-	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch)
+	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch, deriveWalletAddress(cfg.Ethereum.PrivateKey), cfg.Storage.DataDir)
 	if err := apiServer.Start(); err != nil {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
@@ -817,6 +832,9 @@ func shutdownRuntime() {
 	}
 	if sessionStore != nil {
 		_ = sessionStore.Close()
+	}
+	if workflowStore != nil {
+		_ = workflowStore.Close()
 	}
 }
 

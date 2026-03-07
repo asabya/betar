@@ -22,7 +22,7 @@ type Server struct {
 	paymentService *marketplace.PaymentService
 }
 
-func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier, orch *workflow.Orchestrator) *Server {
+func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier, orch *workflow.Orchestrator, walletAddr, dataDir string) *Server {
 	r := mux.NewRouter()
 
 	// Add handlers
@@ -30,6 +30,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	handlers.RegisterWalletHandlers(r)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
 	handlers.RegisterSessionHandlers(r, sessionStore)
+	handlers.RegisterStatusHandlers(r, p2pHost, walletAddr, dataDir)
 	if orch != nil {
 		handlers.RegisterWorkflowHandlers(r, orch)
 	}
@@ -55,16 +56,34 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// CORS middleware
+	handler := corsMiddleware(r)
+
 	return &Server{
 		port: port,
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%d", port),
-			Handler:      r,
+			Handler:      handler,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
 		paymentService: paymentSvc,
 	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Start() error {

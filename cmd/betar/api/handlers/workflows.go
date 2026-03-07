@@ -50,14 +50,18 @@ func (h *workflowHandler) createWorkflow(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *workflowHandler) listWorkflows(w http.ResponseWriter, r *http.Request) {
-	workflows := h.orch.ListWorkflows()
+	workflows, err := h.orch.ListWorkflows(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(workflows)
 }
 
 func (h *workflowHandler) getWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	wf, err := h.orch.GetWorkflow(id)
+	wf, err := h.orch.GetWorkflow(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -68,12 +72,12 @@ func (h *workflowHandler) getWorkflow(w http.ResponseWriter, r *http.Request) {
 
 func (h *workflowHandler) cancelWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	if err := h.orch.CancelWorkflow(id); err != nil {
+	if err := h.orch.CancelWorkflow(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	wf, err := h.orch.GetWorkflow(id)
+	wf, err := h.orch.GetWorkflow(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

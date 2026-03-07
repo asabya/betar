@@ -1,7 +1,6 @@
 package marketplace
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -168,39 +167,6 @@ type PaymentHeader struct {
 	Payload  *EVMPayload          `json:"payload,omitempty"`
 }
 
-// TaskExecuteRequest is sent for task execution with payment
-type TaskExecuteRequest struct {
-	AgentID         string         `json:"agent_id"`
-	Input           string         `json:"input"`
-	PaymentHeader   *PaymentHeader `json:"payment_header,omitempty"`
-	TransactionHash string         `json:"transaction_hash,omitempty"`
-}
-
-// TaskExecuteResponse is returned after task execution
-type TaskExecuteResponse struct {
-	RequestID       string `json:"request_id"`
-	Output          string `json:"output,omitempty"`
-	Error           string `json:"error,omitempty"`
-	TransactionHash string `json:"transaction_hash,omitempty"`
-}
-
-// PaymentRequiredResponse is returned when a task requires payment before execution
-type PaymentRequiredResponse struct {
-	AgentID            string               `json:"agent_id"`
-	RequestID          string               `json:"request_id"`
-	Message            string               `json:"message"`
-	PaymentRequirement *PaymentRequirements `json:"payment_requirement,omitempty"`
-	RequiresPayment    bool                 `json:"requires_payment"`
-}
-
-// PaymentHeaderFromJSON deserializes payment header from JSON
-func PaymentHeaderFromJSON(data []byte) (*PaymentHeader, error) {
-	var ph PaymentHeader
-	if err := json.Unmarshal(data, &ph); err != nil {
-		return nil, fmt.Errorf("failed to parse payment header: %w", err)
-	}
-	return &ph, nil
-}
 
 // CreatePaymentRequirements creates a payment requirement from agent listing (x402 v2 format)
 func CreatePaymentRequirements(network, amount, asset, payTo string, timeout int64) PaymentRequirements {
@@ -216,11 +182,6 @@ func CreatePaymentRequirements(network, amount, asset, payTo string, timeout int
 			"version": "2",
 		},
 	}
-}
-
-// CreatePaymentRequirement creates a payment requirement (alias for backward compatibility)
-func CreatePaymentRequirement(network, amount, asset, payTo string, timeout int64) PaymentRequirements {
-	return CreatePaymentRequirements(network, amount, asset, payTo, timeout)
 }
 
 // CAIP-2 network identifiers for x402 v2

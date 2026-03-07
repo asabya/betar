@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -89,7 +90,7 @@ func buildRightPanelContent(m model) string {
 
 	content += "\n" + TitleStyle.Render("Active Workflows") + "\n"
 	if orch := runtimeOrchestrator; orch != nil {
-		workflows := orch.ListWorkflows()
+		workflows, _ := orch.ListWorkflows(context.Background())
 		active := 0
 		for _, wf := range workflows {
 			if wf.Status == types.WorkflowStatusRunning || wf.Status == types.WorkflowStatusPending {

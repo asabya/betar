@@ -1,4 +1,4 @@
-.PHONY: help deps build run test fmt vet clean contracts-build
+.PHONY: help deps build run test fmt vet clean contracts-build web-install web-dev web-build
 
 GO ?= go
 BINARY ?= betar
@@ -36,6 +36,15 @@ vet:
 
 contracts-build:
 	forge build
+
+web-install:
+	cd web && npm install
+
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
 
 clean:
 	rm -rf bin
