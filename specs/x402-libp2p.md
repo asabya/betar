@@ -72,11 +72,13 @@ Both the request **and** the response use this framing, which means a single str
 
 ## 5. Message Schemas
 
-All `body` fields carry opaque application payload. The value MUST be the JSON encoding of the raw application bytes, which renders as a **base64-encoded string** in the JSON wire format (standard Go `[]byte` → JSON marshalling). The server MUST reject a `body` that is not valid base64 or whose decoded content is not valid JSON with `INVALID_MESSAGE (1000)`.
+All `body` fields carry opaque application payload. The value MUST be the JSON encoding of the raw application bytes, which renders as a **base64-encoded string** in the JSON wire format (standard Go `[]byte` → JSON marshalling).
+
+> **Implementation note:** In Go, `json.Unmarshal` into a `[]byte` field implicitly validates base64 encoding and rejects invalid input, so no separate base64 validation step is needed.
 
 ### 5.1 `x402.request`
 
-> `correlation_id` MUST be a UUID v4 string. The server MUST reject a request whose `correlation_id` is empty or not a valid UUID v4 with `INVALID_MESSAGE (1000)`.
+> `correlation_id` SHOULD be a UUID v4 string. The server MUST reject a request whose `correlation_id` is empty with `INVALID_MESSAGE (1000)`. Strict UUID v4 format validation is not required — the value is used as an opaque correlation key.
 
 ```jsonc
 {
@@ -104,7 +106,7 @@ All `body` fields carry opaque application payload. The value MUST be the JSON e
     "amount": "<atomic USDC units>",
     "asset": "<USDC contract address>",
     "pay_to": "<seller Ethereum address>",
-    "max_timeout_seconds": 300,
+    "max_timeout_seconds": 60,
     "extra": { "name": "USDC", "version": "2" }
   },
   "message": "Payment required"
@@ -139,19 +141,30 @@ All `body` fields carry opaque application payload. The value MUST be the JSON e
 }
 ```
 
-### 5.4 `x402.response`
+### 5.4 Body Payload Schema
+
+For the `execute` method, the `body` field (after base64 decoding) MUST contain a JSON object with the following structure:
+
+```jsonc
+{
+  "resource": "<agent-id>",   // target agent identifier
+  "input": "<string>"         // task input for the agent
+}
+```
+
+### 5.5 `x402.response`
 
 ```jsonc
 {
   "version": "1.0",
   "correlation_id": "<same>",
-  "payment_id": "<payer:txhash>",
+  "payment_id": "0x<keccak256(payer:payee:amount:network:timestamp)>",
   "tx_hash": "0x...",
   "body": <bytes>                  // application response
 }
 ```
 
-### 5.5 `x402.error`
+### 5.6 `x402.error`
 
 ```jsonc
 {
@@ -180,6 +193,7 @@ All `body` fields carry opaque application payload. The value MUST be the JSON e
 | 2005 | `PAYMENT_AMOUNT_WRONG` | false | Signed amount doesn't match requirement |
 | 2007 | `SETTLEMENT_FAILED` | true | Facilitator settlement failed; safe to retry |
 | 3000 | `EXECUTION_FAILED` | false | Agent execution error (payment already settled) |
+| 9999 | `UNKNOWN_ERROR` | false | Unrecognised error code (catch-all default) |
 
 ---
 
@@ -245,7 +259,9 @@ The `challenge_nonce` serves a dual role:
 1. **Server challenge** — Binds the payment to this specific interaction, preventing a client from re-using a signed payment from a previous interaction.
 2. **EIP-3009 on-chain nonce** — The same 32-byte value becomes `TransferWithAuthorization.nonce`. Once `transferWithAuthorization` executes on-chain, the nonce is permanently consumed by the USDC contract, making the payment unreplayable at the blockchain level.
 
-**Challenge TTL:** The server keeps a challenge alive for 5 minutes (configurable). If `ChallengeExpiresAt` passes before the client sends `x402.paid_request`, the server returns `PAYMENT_NONCE_EXPIRED` (retryable=true) and the client must restart the flow.
+**Challenge TTL vs EIP-712 validity:** Two distinct timeouts apply:
+- **Challenge TTL (5 minutes):** How long the server keeps the challenge nonce alive. If `ChallengeExpiresAt` passes before the client sends `x402.paid_request`, the server returns `PAYMENT_NONCE_EXPIRED` (retryable=true) and the client must restart the flow.
+- **EIP-712 `validBefore` (60 seconds):** The on-chain signature validity window set in `authorization.valid_before`. This is shorter than the challenge TTL because the signature should be used promptly after creation.
 
 **Preemptive nonce security:** When `server_nonce = "preemptive"`, the server performs standard EIP-712 signature verification (which checks timestamp validity and recovers the signer address), and the on-chain USDC nonce replay protection ensures the same signed payload cannot be reused.
 
@@ -280,3 +296,5 @@ This specification uses JSON because:
 - `EVMAuthorization.Nonce` uses `0x`-prefixed hex (EIP-712 bytes32 encoding).
 - The server MUST delete a challenge from its store after one consumption attempt (whether successful or not), preventing replay via repeated `x402.paid_request` messages.
 - Facilitator settlement is performed by the server; the client only needs to provide a valid EIP-712 signature.
+- **Stream error behavior:** If an incoming frame is malformed (e.g., invalid type length, oversized data), the server silently closes the stream without sending an error frame. Only well-formed messages with unrecognised types or handler errors receive an `x402.error` response.
+- **In-memory storage limitation:** The challenge nonce store and used-nonce tracker are currently in-memory only. Server restarts clear all pending challenges and nonce history. For production deployments, a persistent backing store is recommended to prevent nonce replay across restarts.

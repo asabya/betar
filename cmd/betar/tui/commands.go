@@ -9,6 +9,7 @@ import (
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
+	"github.com/asabya/betar/internal/workflow"
 	"github.com/asabya/betar/pkg/types"
 )
 
@@ -26,6 +27,7 @@ var (
 	runtimeWalletAddr     string
 	runtimeDataDir        string
 	runtimeSessionStore   SessionReader
+	runtimeOrchestrator   *workflow.Orchestrator
 )
 
 // knownCommands is the list used for autocomplete suggestions.
@@ -41,6 +43,9 @@ var knownCommands = []string{
 	"/order create ",
 	"/session list ",
 	"/session show ",
+	"/workflow create ",
+	"/workflow list",
+	"/workflow status ",
 }
 
 func processCommand(cmd string) []string {
@@ -57,6 +62,9 @@ func processCommand(cmd string) []string {
 			"  /status           - Show node status",
 			"  /session list <agentID>            - List sessions for an agent",
 			"  /session show <agentID> <callerID> - Show session exchanges",
+			"  /workflow create <agents> <input>  - Run a multi-agent workflow",
+			"  /workflow list                     - List all workflows",
+			"  /workflow status <id>              - Show workflow status",
 			"  /exit             - Quit application",
 		}
 	case cmd == "/agent list":
@@ -77,6 +85,10 @@ func processCommand(cmd string) []string {
 		return listSessions(strings.TrimPrefix(cmd, "/session list "))
 	case strings.HasPrefix(cmd, "/session show "):
 		return showSession(strings.TrimPrefix(cmd, "/session show "))
+	case cmd == "/workflow list":
+		return listWorkflowsTUI()
+	case strings.HasPrefix(cmd, "/workflow status "):
+		return showWorkflowStatus(strings.TrimPrefix(cmd, "/workflow status "))
 	default:
 		return []string{"Unknown command: " + cmd + ". Type /help for available commands."}
 	}
@@ -225,6 +237,11 @@ func SetSessionStore(s SessionReader) {
 	runtimeSessionStore = s
 }
 
+// SetOrchestrator sets the workflow orchestrator for TUI workflow commands.
+func SetOrchestrator(o *workflow.Orchestrator) {
+	runtimeOrchestrator = o
+}
+
 func listSessions(agentID string) []string {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
@@ -277,6 +294,54 @@ func showSession(args string) []string {
 			result = append(result, fmt.Sprintf("    PAY: %s USDC | tx=%s | payer=%s",
 				ex.Payment.Amount, ex.Payment.TxHash[:min(10, len(ex.Payment.TxHash))], ex.Payment.Payer))
 		}
+	}
+	return result
+}
+
+func listWorkflowsTUI() []string {
+	if runtimeOrchestrator == nil {
+		return []string{"Orchestrator not initialized. Start node first."}
+	}
+	workflows, _ := runtimeOrchestrator.ListWorkflows(context.Background())
+	if len(workflows) == 0 {
+		return []string{"No workflows found"}
+	}
+	var result []string
+	result = append(result, "Workflows:")
+	for _, wf := range workflows {
+		input := truncate(wf.Input, 40)
+		result = append(result, fmt.Sprintf("  %s  %s  %d steps  %s", wf.ID[:8], wf.Status, len(wf.Steps), input))
+	}
+	return result
+}
+
+func showWorkflowStatus(id string) []string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return []string{"Usage: /workflow status <id>"}
+	}
+	if runtimeOrchestrator == nil {
+		return []string{"Orchestrator not initialized. Start node first."}
+	}
+	wf, err := runtimeOrchestrator.GetWorkflow(context.Background(), id)
+	if err != nil {
+		return []string{fmt.Sprintf("Error: %v", err)}
+	}
+	var result []string
+	result = append(result, fmt.Sprintf("Workflow %s  Status: %s", wf.ID[:8], wf.Status))
+	result = append(result, fmt.Sprintf("  Input: %s", truncate(wf.Input, 120)))
+	for _, step := range wf.Steps {
+		line := fmt.Sprintf("  Step %d (%s): %s", step.Index+1, step.AgentID, step.Status)
+		if step.Error != "" {
+			line += " - " + step.Error
+		}
+		if step.Output != "" {
+			line += " -> " + truncate(step.Output, 80)
+		}
+		result = append(result, line)
+	}
+	if wf.Output != "" {
+		result = append(result, fmt.Sprintf("  Output: %s", truncate(wf.Output, 200)))
 	}
 	return result
 }
