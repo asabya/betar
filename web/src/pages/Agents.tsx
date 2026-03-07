@@ -72,7 +72,7 @@ export function Agents() {
                   {agent.price > 0 ? `${agent.price} USDC` : 'Free'}
                 </span>
                 <button
-                  onClick={() => { setExecuteTarget({ id: agent.id, name: agent.name }); setExecuteInput(''); setExecuteResult(null); }}
+                  onClick={() => { setExecuteTarget({ id: agent.agentID, name: agent.name }); setExecuteInput(''); setExecuteResult(null); }}
                   className="flex items-center gap-1 text-xs bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <Play size={12} /> Execute

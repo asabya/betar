@@ -152,7 +152,7 @@ function CreateWorkflowForm({ onSubmit, loading }: { onSubmit: (agentIds: string
   const [input, setInput] = useState('');
 
   const allAgents = [
-    ...(localAgents?.map((a) => ({ id: a.id, name: a.name })) ?? []),
+    ...(localAgents?.map((a) => ({ id: a.agentID, name: a.name })) ?? []),
     ...(networkAgents?.map((a) => ({ id: a.id, name: a.name })) ?? []),
   ];
 
