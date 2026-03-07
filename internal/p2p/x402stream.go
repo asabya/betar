@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -182,8 +183,23 @@ func readX402Frame(r io.Reader) (string, []byte, error) {
 	return string(typeBytes), data, nil
 }
 
-// marshalError produces a minimal JSON x402.error body for unexpected internal errors.
+// marshalError produces a JSON x402.error body for unexpected internal errors.
 func marshalError(correlationID, message string) []byte {
-	return []byte(fmt.Sprintf(`{"version":"1.0","correlation_id":%q,"error_code":1000,"error_name":"INVALID_MESSAGE","message":%q,"retryable":false}`,
-		correlationID, message))
+	e := struct {
+		Version       string `json:"version"`
+		CorrelationID string `json:"correlation_id"`
+		ErrorCode     int    `json:"error_code"`
+		ErrorName     string `json:"error_name"`
+		Message       string `json:"message"`
+		Retryable     bool   `json:"retryable"`
+	}{
+		Version:       "1.0",
+		CorrelationID: correlationID,
+		ErrorCode:     1000,
+		ErrorName:     "INVALID_MESSAGE",
+		Message:       message,
+		Retryable:     false,
+	}
+	data, _ := json.Marshal(e)
+	return data
 }

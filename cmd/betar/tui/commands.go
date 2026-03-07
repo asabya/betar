@@ -302,7 +302,7 @@ func listWorkflowsTUI() []string {
 	if runtimeOrchestrator == nil {
 		return []string{"Orchestrator not initialized. Start node first."}
 	}
-	workflows := runtimeOrchestrator.ListWorkflows()
+	workflows, _ := runtimeOrchestrator.ListWorkflows(context.Background())
 	if len(workflows) == 0 {
 		return []string{"No workflows found"}
 	}
@@ -323,7 +323,7 @@ func showWorkflowStatus(id string) []string {
 	if runtimeOrchestrator == nil {
 		return []string{"Orchestrator not initialized. Start node first."}
 	}
-	wf, err := runtimeOrchestrator.GetWorkflow(id)
+	wf, err := runtimeOrchestrator.GetWorkflow(context.Background(), id)
 	if err != nil {
 		return []string{fmt.Sprintf("Error: %v", err)}
 	}
