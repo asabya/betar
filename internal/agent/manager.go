@@ -49,14 +49,14 @@ type Manager struct {
 
 // LocalAgent represents a local agent managed by this node
 type LocalAgent struct {
-	ID          string
-	Name        string
-	Description string
-	Price       float64
-	MetadataCID string
-	AgentID     string // ADK runtime agent ID
-	Status      string
-	CreatedAt   time.Time
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Price       float64   `json:"price"`
+	MetadataCID string    `json:"metadataCID"`
+	AgentID     string    `json:"agentID"` // ADK runtime agent ID
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // NewManager creates a new agent manager
