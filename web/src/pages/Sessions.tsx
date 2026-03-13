@@ -21,9 +21,9 @@ export function Sessions() {
         {agents?.map((agent) => (
           <button
             key={agent.id}
-            onClick={() => { setSelectedAgent(agent.id); setSelectedCaller(null); }}
+            onClick={() => { setSelectedAgent(agent.agentID); setSelectedCaller(null); }}
             className={`px-4 py-2 rounded-lg text-sm transition-colors border ${
-              selectedAgent === agent.id
+              selectedAgent === agent.agentID
                 ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
                 : 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-primary)]'
             }`}

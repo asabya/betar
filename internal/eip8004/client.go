@@ -181,14 +181,27 @@ func (c *Client) GiveFeedback(ctx context.Context, agentID *big.Int,
 
 // GetReputationSummary retrieves aggregated feedback for an agent.
 // Pass empty tag1/tag2 to aggregate across all tags.
+// When clientAddrs is empty, all known clients are fetched from the contract.
 func (c *Client) GetReputationSummary(ctx context.Context, agentID *big.Int,
-	tag1, tag2 string) (count uint64, summaryValue int64, decimals uint8, err error) {
+	tag1, tag2 string, clientAddrs ...common.Address) (count uint64, summaryValue int64, decimals uint8, err error) {
 
 	if c == nil || c.reputation == nil {
 		return 0, 0, 0, nil
 	}
 	opts := &bind.CallOpts{Context: ctx}
-	out, callErr := c.reputation.GetSummary(opts, agentID, nil, tag1, tag2)
+	addrs := clientAddrs
+	if len(addrs) == 0 {
+		// Fetch all clients that have given feedback for this agent.
+		clients, clientErr := c.reputation.GetClients(opts, agentID)
+		if clientErr != nil {
+			return 0, 0, 0, fmt.Errorf("eip8004: GetClients: %w", clientErr)
+		}
+		if len(clients) == 0 {
+			return 0, 0, 0, nil
+		}
+		addrs = clients
+	}
+	out, callErr := c.reputation.GetSummary(opts, agentID, addrs, tag1, tag2)
 	if callErr != nil {
 		return 0, 0, 0, fmt.Errorf("eip8004: GetReputationSummary: %w", callErr)
 	}
