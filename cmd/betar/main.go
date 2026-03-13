@@ -50,6 +50,7 @@ var (
 	sessionStore      *session.Store
 	workflowStore     *workflow.LevelDBStore
 	eip8004Client     *eip8004.Client
+	httpHost          *p2p.HTTPHost
 )
 
 var rootCmd = &cobra.Command{
@@ -466,16 +467,17 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 
 	if listingService != nil {
 		serveMsg := &types.AgentListingMessage{
-			Type:      "list",
-			AgentID:   registered.AgentID,
-			Name:      registered.Name,
-			Price:     registered.Price,
-			Metadata:  registered.MetadataCID,
-			SellerID:  p2pHost.ID().String(),
-			Addrs:     p2pHost.AddrStrings(),
-			Protocols: []string{p2p.X402ProtocolID},
-			Timestamp: time.Now().Unix(),
-			TokenID:   tokenIDToString(registered.TokenID),
+			Type:         "list",
+			AgentID:      registered.AgentID,
+			Name:         registered.Name,
+			Price:        registered.Price,
+			Metadata:     registered.MetadataCID,
+			SellerID:     p2pHost.ID().String(),
+			Addrs:        p2pHost.AddrStrings(),
+			Protocols:    []string{p2p.X402ProtocolID},
+			Timestamp:    time.Now().Unix(),
+			TokenID:      tokenIDToString(registered.TokenID),
+			HTTPEndpoint: httpEndpointURL(),
 		}
 		listingService.UpsertLocalListing(serveMsg)
 		if data, err := json.Marshal(serveMsg); err == nil {
@@ -649,7 +651,18 @@ func initRuntime(cmd *cobra.Command) error {
 				fmt.Printf("Wallet address: %s (RPC URL required for payments)\n", walletAddr)
 			} else {
 				fmt.Printf("Wallet address: %s\n", walletAddr)
-				paymentService = marketplace.NewPaymentService(wallet, walletAddr)
+
+				// Create facilitator registry with SAFE 4337 support.
+				registry := marketplace.NewFacilitatorRegistry()
+				safe4337, safe4337Err := marketplace.NewSafe4337Facilitator(cfg.Ethereum.RPCURL)
+				if safe4337Err != nil {
+					fmt.Printf("Warning: SAFE 4337 facilitator not available: %v\n", safe4337Err)
+				} else {
+					registry.Register(safe4337)
+					fmt.Println("SAFE 4337 facilitator registered")
+				}
+
+				paymentService = marketplace.NewPaymentService(wallet, walletAddr, registry)
 				if paymentService == nil {
 					fmt.Printf("Warning: failed to create payment service (payments disabled)\n")
 				}
@@ -707,6 +720,22 @@ func initRuntime(cmd *cobra.Command) error {
 
 	// Register "info" handler on the basic marketplace stream handler.
 	agentManager.RegisterStreamHandlers(streamHandler)
+
+	// Start libp2p HTTP transport if enabled.
+	if cfg.P2P.HTTPEnabled {
+		var httpErr error
+		httpHost, httpErr = p2p.NewHTTPHost(x402StreamHandler, cfg.P2P.HTTPPort)
+		if httpErr != nil {
+			fmt.Printf("Warning: failed to create HTTP host: %v (HTTP transport disabled)\n", httpErr)
+		} else {
+			if httpErr = httpHost.Start(); httpErr != nil {
+				fmt.Printf("Warning: failed to start HTTP host: %v (HTTP transport disabled)\n", httpErr)
+				httpHost = nil
+			} else {
+				fmt.Printf("x402 HTTP transport listening on %s\n", httpHost.Addr())
+			}
+		}
+	}
 
 	// Start GossipSub listener for remote agent announcements.
 	listingService.StartAnnouncementListener(ctx, p2pPubSub)
@@ -770,16 +799,17 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 	protocols := []string{p2p.X402ProtocolID}
 
 	listing := &types.AgentListingMessage{
-		Type:      "list",
-		AgentID:   registered.AgentID,
-		Name:      registered.Name,
-		Price:     registered.Price,
-		Metadata:  registered.MetadataCID,
-		SellerID:  p2pHost.ID().String(),
-		Addrs:     p2pHost.AddrStrings(),
-		Protocols: protocols,
-		Timestamp: time.Now().Unix(),
-		TokenID:   tokenIDToString(registered.TokenID),
+		Type:         "list",
+		AgentID:      registered.AgentID,
+		Name:         registered.Name,
+		Price:        registered.Price,
+		Metadata:     registered.MetadataCID,
+		SellerID:     p2pHost.ID().String(),
+		Addrs:        p2pHost.AddrStrings(),
+		Protocols:    protocols,
+		Timestamp:    time.Now().Unix(),
+		TokenID:      tokenIDToString(registered.TokenID),
+		HTTPEndpoint: httpEndpointURL(),
 	}
 
 	return registered, listing, nil
@@ -833,9 +863,20 @@ func deriveWalletAddress(privKeyHex string) string {
 	return crypto.PubkeyToAddress(*pub).Hex()
 }
 
+// httpEndpointURL returns the HTTP transport URL if the HTTP host is running.
+func httpEndpointURL() string {
+	if httpHost == nil {
+		return ""
+	}
+	return fmt.Sprintf("http://localhost:%d/x402/libp2p/1.0.0/", cfg.P2P.HTTPPort)
+}
+
 func printRuntimeInfo() {
 	fmt.Printf("Peer ID: %s\n", p2pHost.ID())
 	fmt.Printf("Addresses: %v\n", p2pHost.AddrStrings())
+	if httpHost != nil {
+		fmt.Printf("HTTP Transport: http://localhost:%d/x402/libp2p/1.0.0/\n", cfg.P2P.HTTPPort)
+	}
 	fmt.Printf("IPFS: embedded ipfs-lite (%s/ipfslite)\n", cfg.Storage.DataDir)
 	fmt.Printf("ADK Model: %s\n", cfg.Agent.Model)
 	fmt.Printf("Identity Key: %s\n", cfg.Storage.P2PKeyPath)
@@ -863,6 +904,9 @@ func shutdownRuntime() {
 	}
 	if ipfsClient != nil {
 		_ = ipfsClient.Close()
+	}
+	if httpHost != nil {
+		_ = httpHost.Close()
 	}
 	if apiServer != nil {
 		_ = apiServer.Stop(context.Background())
@@ -1035,16 +1079,17 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 
 		if listingService != nil {
 			msg := &types.AgentListingMessage{
-				Type:      "list",
-				AgentID:   registered.AgentID,
-				Name:      registered.Name,
-				Price:     registered.Price,
-				Metadata:  registered.MetadataCID,
-				SellerID:  p2pHost.ID().String(),
-				Addrs:     p2pHost.AddrStrings(),
-				Protocols: []string{p2p.X402ProtocolID},
-				Timestamp: time.Now().Unix(),
-				TokenID:   tokenIDToString(registered.TokenID),
+				Type:         "list",
+				AgentID:      registered.AgentID,
+				Name:         registered.Name,
+				Price:        registered.Price,
+				Metadata:     registered.MetadataCID,
+				SellerID:     p2pHost.ID().String(),
+				Addrs:        p2pHost.AddrStrings(),
+				Protocols:    []string{p2p.X402ProtocolID},
+				Timestamp:    time.Now().Unix(),
+				TokenID:      tokenIDToString(registered.TokenID),
+				HTTPEndpoint: httpEndpointURL(),
 			}
 			listingService.UpsertLocalListing(msg)
 			if data, err := json.Marshal(msg); err == nil {

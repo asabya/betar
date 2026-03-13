@@ -48,6 +48,14 @@ func (s *X402StreamHandler) RegisterHandler(msgType string, fn X402MessageHandle
 	s.handlers[msgType] = fn
 }
 
+// GetHandler returns the handler for the given message type, if registered.
+func (s *X402StreamHandler) GetHandler(msgType string) (X402MessageHandler, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	h, ok := s.handlers[msgType]
+	return h, ok
+}
+
 // SendX402Message opens a new stream to the target peer, writes a typed frame, reads the
 // typed response frame, and returns (responseType, responseData, error).
 func (s *X402StreamHandler) SendX402Message(ctx context.Context, to peer.ID, msgType string, payload []byte) (string, []byte, error) {

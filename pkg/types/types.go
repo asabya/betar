@@ -24,15 +24,16 @@ type Service struct {
 
 // AgentListing represents an agent listed on the marketplace (off-chain)
 type AgentListing struct {
-	ID        string   `json:"id"`                  // Marketplace agent ID (peerID/agentID)
-	Name      string   `json:"name"`                // Agent name
-	Price     float64  `json:"price"`               // Price per task in ETH
-	Metadata  string   `json:"metadata"`            // IPFS CID
-	SellerID  string   `json:"sellerId"`            // Seller's peer ID
-	Addrs     []string `json:"addrs,omitempty"`     // Multiaddrs to dial seller peer
-	Protocols []string `json:"protocols,omitempty"` // Supported app protocols
-	Timestamp int64    `json:"timestamp"`           // Unix timestamp
-	TokenID   string   `json:"tokenId,omitempty"`   // EIP-8004 on-chain token ID
+	ID           string   `json:"id"`                      // Marketplace agent ID (peerID/agentID)
+	Name         string   `json:"name"`                    // Agent name
+	Price        float64  `json:"price"`                   // Price per task in ETH
+	Metadata     string   `json:"metadata"`                // IPFS CID
+	SellerID     string   `json:"sellerId"`                // Seller's peer ID
+	Addrs        []string `json:"addrs,omitempty"`         // Multiaddrs to dial seller peer
+	Protocols    []string `json:"protocols,omitempty"`     // Supported app protocols
+	Timestamp    int64    `json:"timestamp"`               // Unix timestamp
+	TokenID      string   `json:"tokenId,omitempty"`       // EIP-8004 on-chain token ID
+	HTTPEndpoint string   `json:"httpEndpoint,omitempty"`  // HTTP transport URL for non-P2P clients
 }
 
 // Order represents a marketplace order
@@ -48,16 +49,17 @@ type Order struct {
 
 // AgentListingMessage represents a CRDT listing mutation payload.
 type AgentListingMessage struct {
-	Type      string   `json:"type"` // "list", "update", "delist"
-	AgentID   string   `json:"agentId"`
-	Name      string   `json:"name"`
-	Price     float64  `json:"price"`
-	Metadata  string   `json:"metadata"` // IPFS CID
-	SellerID  string   `json:"sellerId"`
-	Addrs     []string `json:"addrs,omitempty"`
-	Protocols []string `json:"protocols,omitempty"`
-	Timestamp int64    `json:"timestamp"`
-	TokenID   string   `json:"tokenId,omitempty"`
+	Type         string   `json:"type"` // "list", "update", "delist"
+	AgentID      string   `json:"agentId"`
+	Name         string   `json:"name"`
+	Price        float64  `json:"price"`
+	Metadata     string   `json:"metadata"` // IPFS CID
+	SellerID     string   `json:"sellerId"`
+	Addrs        []string `json:"addrs,omitempty"`
+	Protocols    []string `json:"protocols,omitempty"`
+	Timestamp    int64    `json:"timestamp"`
+	TokenID      string   `json:"tokenId,omitempty"`
+	HTTPEndpoint string   `json:"httpEndpoint,omitempty"`
 }
 
 // OrderMessage represents a pubsub message for order updates

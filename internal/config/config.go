@@ -32,6 +32,8 @@ type P2PConfig struct {
 	PrivKey        p2pcrypto.PrivKey
 	MinConnections int
 	MaxConnections int
+	HTTPPort       int  // Port for libp2p HTTP transport (default: 9090)
+	HTTPEnabled    bool // Enable HTTP transport (default: true)
 }
 
 // IPFSConfig holds IPFS configuration
@@ -77,6 +79,8 @@ func LoadConfig() (*Config, error) {
 			EnableRelay:    getEnv("P2P_ENABLE_RELAY", "true") != "false",
 			MinConnections: 2,
 			MaxConnections: 10,
+			HTTPPort:       getEnvInt("BETAR_HTTP_PORT", 9090),
+			HTTPEnabled:    getEnv("BETAR_HTTP_ENABLED", "true") != "false",
 		},
 		IPFS: &IPFSConfig{
 			APIURL: getEnv("IPFS_API_URL", "http://localhost:5001"),
@@ -238,6 +242,21 @@ func getEnv(key, defaultValue string) string {
 		return val
 	}
 	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	n := 0
+	for _, c := range val {
+		if c < '0' || c > '9' {
+			return defaultValue
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 func splitComma(s string) []string {

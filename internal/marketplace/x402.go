@@ -1,6 +1,7 @@
 package marketplace
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,12 +42,33 @@ const (
 
 // X402PaymentEnvelope carries signed payment data inside x402.request or x402.paid_request.
 type X402PaymentEnvelope struct {
-	X402Version int         `json:"x402_version"`
-	Scheme      string      `json:"scheme"`
-	Network     string      `json:"network"`
-	ServerNonce string      `json:"server_nonce"`
-	Payer       string      `json:"payer"`
-	Payload     *EVMPayload `json:"payload,omitempty"`
+	X402Version int              `json:"x402_version"`
+	Scheme      string           `json:"scheme"`
+	Network     string           `json:"network"`
+	ServerNonce string           `json:"server_nonce"`
+	Payer       string           `json:"payer"`
+	Payload     json.RawMessage  `json:"payload,omitempty"`
+}
+
+// EVMPayloadFromEnvelope decodes the Payload as an EVMPayload (for "exact" scheme).
+func (e *X402PaymentEnvelope) EVMPayloadFromEnvelope() (*EVMPayload, error) {
+	if len(e.Payload) == 0 {
+		return nil, nil
+	}
+	var p EVMPayload
+	if err := json.Unmarshal(e.Payload, &p); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal EVMPayload: %w", err)
+	}
+	return &p, nil
+}
+
+// MarshalEVMPayload encodes an EVMPayload to json.RawMessage for use in Payload.
+func MarshalEVMPayload(p *EVMPayload) json.RawMessage {
+	if p == nil {
+		return nil
+	}
+	data, _ := json.Marshal(p)
+	return data
 }
 
 // X402Request is sent client → server to request resource execution.
@@ -70,6 +92,7 @@ type X402PaymentRequired struct {
 	PaymentRequirements *PaymentRequirements `json:"payment_requirements"`
 	Message             string               `json:"message"`
 	SellerDID           string               `json:"seller_did,omitempty"`
+	AcceptedSchemes     []string             `json:"accepted_schemes,omitempty"`
 }
 
 // X402PaidRequest is sent client → server with a signed payment attached.

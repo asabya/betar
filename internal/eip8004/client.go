@@ -292,12 +292,18 @@ func FromJSON(data []byte) (*MetadataSchema, error) {
 }
 
 // CreateMetadataSchema creates a metadata schema from a registration payload.
-func CreateMetadataSchema(reg *types.AgentRegistration) *MetadataSchema {
+// If httpEndpoint is non-empty, it is populated as the endpoint for each service.
+func CreateMetadataSchema(reg *types.AgentRegistration, httpEndpoint ...string) *MetadataSchema {
+	endpoint := ""
+	if len(httpEndpoint) > 0 {
+		endpoint = httpEndpoint[0]
+	}
 	services := make([]Service, len(reg.Services))
 	for i, s := range reg.Services {
 		services[i] = Service{
-			Name:    s.Name,
-			Version: s.Version,
+			Name:     s.Name,
+			Endpoint: endpoint,
+			Version:  s.Version,
 		}
 	}
 	return &MetadataSchema{

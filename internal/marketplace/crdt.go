@@ -83,15 +83,16 @@ func (c *ListingCRDT) Apply(msg *types.AgentListingMessage) bool {
 	}
 
 	listing := types.AgentListing{
-		ID:        msg.AgentID,
-		Name:      msg.Name,
-		Price:     msg.Price,
-		Metadata:  msg.Metadata,
-		SellerID:  msg.SellerID,
-		Addrs:     msg.Addrs,
-		Protocols: msg.Protocols,
-		Timestamp: msg.Timestamp,
-		TokenID:   msg.TokenID,
+		ID:           msg.AgentID,
+		Name:         msg.Name,
+		Price:        msg.Price,
+		Metadata:     msg.Metadata,
+		SellerID:     msg.SellerID,
+		Addrs:        msg.Addrs,
+		Protocols:    msg.Protocols,
+		Timestamp:    msg.Timestamp,
+		TokenID:      msg.TokenID,
+		HTTPEndpoint: msg.HTTPEndpoint,
 	}
 
 	payload, err := json.Marshal(listing)

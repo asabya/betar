@@ -52,6 +52,7 @@ type PaymentService struct {
 	facilitator    string
 	verifier       *PaymentVerifier
 	challengeStore *ChallengeStore
+	registry       *FacilitatorRegistry
 }
 
 type FacilitatorVerifyRequest struct {
@@ -67,15 +68,40 @@ type FacilitatorVerifyResponse struct {
 	Payer          string `json:"payer,omitempty"`
 }
 
-func NewPaymentService(wallet *eth.Wallet, paymentAddr string) *PaymentService {
+func NewPaymentService(wallet *eth.Wallet, paymentAddr string, registry ...*FacilitatorRegistry) *PaymentService {
+	facilitatorURL := getEnv("FACILITATOR_URL", FacilitatorURL)
+
+	var reg *FacilitatorRegistry
+	if len(registry) > 0 && registry[0] != nil {
+		reg = registry[0]
+	} else {
+		reg = NewFacilitatorRegistry()
+	}
+
+	// Register the default EIP-712 facilitator if not already present.
+	if _, ok := reg.Get("exact"); !ok {
+		reg.Register(NewEIP712Facilitator(facilitatorURL, NetworkBaseSepolia))
+	}
+
 	return &PaymentService{
 		wallet:         wallet,
 		paymentAddr:    paymentAddr,
 		network:        NetworkBaseSepolia,
-		facilitator:    getEnv("FACILITATOR_URL", FacilitatorURL),
+		facilitator:    facilitatorURL,
 		verifier:       NewPaymentVerifier(NetworkBaseSepolia),
 		challengeStore: newChallengeStore(),
+		registry:       reg,
 	}
+}
+
+// GetFacilitatorRegistry returns the facilitator registry for external use.
+func (s *PaymentService) GetFacilitatorRegistry() *FacilitatorRegistry {
+	return s.registry
+}
+
+// GetAcceptedSchemes returns the list of payment schemes this service accepts.
+func (s *PaymentService) GetAcceptedSchemes() []string {
+	return s.registry.Schemes()
 }
 
 // GenerateChallenge creates a fresh server nonce bound to the given correlation ID.
@@ -357,6 +383,80 @@ func (s *PaymentService) VerifyAndSettle(ctx context.Context, header *PaymentHea
 	fmt.Printf("[VerifyAndSettle] >>> Transaction confirmed. TxHash: %s, Block: %d <<<\n", txHash, receipt.BlockNumber)
 
 	return txHash, nil
+}
+
+// VerifyAndSettleWithScheme uses the facilitator registry to verify and settle
+// payments using the appropriate facilitator for the given scheme.
+func (s *PaymentService) VerifyAndSettleWithScheme(ctx context.Context, scheme string, payload *FacilitatorPayload, expectedAmount *big.Int) (string, error) {
+	facilitator, ok := s.registry.Get(scheme)
+	if !ok {
+		return "", fmt.Errorf("unsupported payment scheme: %s", scheme)
+	}
+
+	fmt.Printf("[VerifyAndSettleWithScheme] Using facilitator for scheme: %s\n", scheme)
+
+	// For EIP-712 ("exact"), also do local validation if we have an EVMPayload.
+	if scheme == "exact" {
+		if evmPayload, ok := payload.PaymentPayload.(*EVMPayload); ok {
+			header := &PaymentHeader{
+				Requirement: payload.PaymentRequirements,
+				Accepted:    &payload.PaymentRequirements,
+				Payer:       payload.Payer,
+				Signature:   evmPayload.Signature,
+				Payload:     evmPayload,
+			}
+			if err := s.verifier.ValidatePayment(header, s.paymentAddr, expectedAmount); err != nil {
+				return "", fmt.Errorf("local payment validation failed: %w", err)
+			}
+		}
+	}
+
+	// Settle with retry for robustness.
+	const maxRetries = 5
+	baseDelay := 1 * time.Second
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := baseDelay * time.Duration(1<<uint(attempt-1))
+			fmt.Printf("[VerifyAndSettleWithScheme] Attempt %d failed, retrying in %v...\n", attempt, delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+
+		result, err := facilitator.Settle(ctx, payload)
+		if err != nil {
+			lastErr = err
+			fmt.Printf("[VerifyAndSettleWithScheme] Attempt %d/%d failed: %v\n", attempt+1, maxRetries, err)
+			continue
+		}
+		if !result.Success {
+			lastErr = fmt.Errorf("settlement failed: %s", result.ErrorReason)
+			fmt.Printf("[VerifyAndSettleWithScheme] Attempt %d/%d failed: %v\n", attempt+1, maxRetries, lastErr)
+			continue
+		}
+
+		fmt.Printf("[VerifyAndSettleWithScheme] Settlement successful, txHash: %s\n", result.TxHash)
+
+		// For EIP-712 scheme, wait for on-chain confirmation.
+		if scheme == "exact" && s.wallet != nil {
+			hash := common.HexToHash(result.TxHash)
+			receipt, err := s.wallet.WaitForTransaction(ctx, hash)
+			if err != nil {
+				return "", fmt.Errorf("transaction not confirmed: %w", err)
+			}
+			if receipt.Status != 1 {
+				return "", fmt.Errorf("transaction failed on-chain")
+			}
+		}
+
+		return result.TxHash, nil
+	}
+
+	return "", fmt.Errorf("settlement failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 func (s *PaymentService) validatePaymentHeader(header *PaymentHeader) error {

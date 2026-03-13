@@ -536,6 +536,11 @@ func (m *Manager) handleX402Request(ctx context.Context, from peer.ID, _ string,
 			fmt.Sprintf("failed to create payment requirement: %v", err))
 	}
 
+	var acceptedSchemes []string
+	if m.paymentService != nil {
+		acceptedSchemes = m.paymentService.GetAcceptedSchemes()
+	}
+
 	pr := marketplace.X402PaymentRequired{
 		Version:             marketplace.X402LibP2PVersion,
 		CorrelationID:       req.CorrelationID,
@@ -544,6 +549,7 @@ func (m *Manager) handleX402Request(ctx context.Context, from peer.ID, _ string,
 		PaymentRequirements: payReq,
 		Message:             "Payment required",
 		SellerDID:           req.Resource,
+		AcceptedSchemes:     acceptedSchemes,
 	}
 	respData, err := json.Marshal(pr)
 	if err != nil {
@@ -580,15 +586,18 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 			return sendX402Error(req.CorrelationID, marketplace.ErrNonceMismatch,
 				fmt.Sprintf("nonce mismatch: expected %s, got %s", challenge.Nonce, req.Payment.ServerNonce))
 		}
-		// Also verify the EIP-712 auth nonce matches.
-		if req.Payment.Payload != nil && req.Payment.Payload.Authorization.Nonce != "" {
-			authNonce := req.Payment.Payload.Authorization.Nonce
-			if strings.HasPrefix(authNonce, "0x") || strings.HasPrefix(authNonce, "0X") {
-				authNonce = authNonce[2:]
-			}
-			if authNonce != challenge.Nonce {
-				return sendX402Error(req.CorrelationID, marketplace.ErrNonceMismatch,
-					"EIP-712 auth nonce does not match challenge nonce")
+		// Also verify the EIP-712 auth nonce matches (only for "exact" scheme).
+		if req.Payment.Scheme == "" || req.Payment.Scheme == "exact" {
+			evmPayload, _ := req.Payment.EVMPayloadFromEnvelope()
+			if evmPayload != nil && evmPayload.Authorization.Nonce != "" {
+				authNonce := evmPayload.Authorization.Nonce
+				if strings.HasPrefix(authNonce, "0x") || strings.HasPrefix(authNonce, "0X") {
+					authNonce = authNonce[2:]
+				}
+				if authNonce != challenge.Nonce {
+					return sendX402Error(req.CorrelationID, marketplace.ErrNonceMismatch,
+						"EIP-712 auth nonce does not match challenge nonce")
+				}
 			}
 		}
 	}
@@ -615,7 +624,24 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 	}
 
 	expectedAmount := big.NewInt(int64(price * 1e6))
-	txHash, err := m.paymentService.VerifyAndSettle(ctx, header, expectedAmount)
+	scheme := req.Payment.Scheme
+	if scheme == "" {
+		scheme = "exact"
+	}
+
+	var txHash string
+	var err error
+	if scheme != "exact" {
+		// Use scheme-based facilitator dispatch for non-EIP-712 schemes.
+		facPayload := &marketplace.FacilitatorPayload{
+			PaymentPayload:      req.Payment.Payload, // json.RawMessage
+			PaymentRequirements: header.Requirement,
+			Payer:               req.Payment.Payer,
+		}
+		txHash, err = m.paymentService.VerifyAndSettleWithScheme(ctx, scheme, facPayload, expectedAmount)
+	} else {
+		txHash, err = m.paymentService.VerifyAndSettle(ctx, header, expectedAmount)
+	}
 	if err != nil {
 		fmt.Printf("[handleX402PaidRequest] VerifyAndSettle failed: %v\n", err)
 		return sendX402Error(req.CorrelationID, marketplace.ErrSettlementFailed,
@@ -679,7 +705,23 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 	header := envelopeToPaymentHeader(env)
 	expectedAmount := big.NewInt(int64(price * 1e6))
 
-	txHash, err := m.paymentService.VerifyAndSettle(ctx, header, expectedAmount)
+	scheme := env.Scheme
+	if scheme == "" {
+		scheme = "exact"
+	}
+
+	var txHash string
+	var err error
+	if scheme != "exact" {
+		facPayload := &marketplace.FacilitatorPayload{
+			PaymentPayload:      env.Payload, // json.RawMessage
+			PaymentRequirements: header.Requirement,
+			Payer:               env.Payer,
+		}
+		txHash, err = m.paymentService.VerifyAndSettleWithScheme(ctx, scheme, facPayload, expectedAmount)
+	} else {
+		txHash, err = m.paymentService.VerifyAndSettle(ctx, header, expectedAmount)
+	}
 	if err != nil {
 		return sendX402Error(req.CorrelationID, marketplace.ErrSettlementFailed,
 			fmt.Sprintf("settlement failed: %v", err))
@@ -943,13 +985,15 @@ func envelopeToPaymentHeader(env *marketplace.X402PaymentEnvelope) *marketplace.
 		"", // PayTo comes from Payload.Authorization.To
 		marketplace.DefaultTimeout,
 	)
-	if env.Payload != nil {
-		req.Amount = env.Payload.Authorization.Value
-		req.PayTo = env.Payload.Authorization.To
+
+	evmPayload, _ := env.EVMPayloadFromEnvelope()
+	if evmPayload != nil {
+		req.Amount = evmPayload.Authorization.Value
+		req.PayTo = evmPayload.Authorization.To
 	}
 	var sig string
-	if env.Payload != nil {
-		sig = env.Payload.Signature
+	if evmPayload != nil {
+		sig = evmPayload.Signature
 	}
 	return &marketplace.PaymentHeader{
 		Requirement: req,
@@ -957,7 +1001,7 @@ func envelopeToPaymentHeader(env *marketplace.X402PaymentEnvelope) *marketplace.
 		Payer:       env.Payer,
 		PaymentID:   "",
 		Signature:   sig,
-		Payload:     env.Payload,
+		Payload:     evmPayload,
 	}
 }
 
@@ -969,7 +1013,7 @@ func paymentHeaderToEnvelope(ph *marketplace.PaymentHeader, serverNonce string) 
 		Network:     ph.Requirement.Network,
 		ServerNonce: serverNonce,
 		Payer:       ph.Payer,
-		Payload:     ph.Payload,
+		Payload:     marketplace.MarshalEVMPayload(ph.Payload),
 	}
 }
 
