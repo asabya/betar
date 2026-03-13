@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useWorkflows, useWorkflow, useCreateWorkflow, useCancelWorkflow, useAgents, useLocalAgents } from '../hooks/useApi';
 import { Modal } from '../components/Modal';
-import { Plus, X, ChevronRight, CheckCircle2, XCircle, Clock, Loader2, SkipForward } from 'lucide-react';
+import { ListSkeleton } from '../components/Skeleton';
+import { ErrorState } from '../components/ErrorState';
+import { Plus, X, ChevronRight, CheckCircle2, XCircle, Clock, Loader2, SkipForward, GitBranch } from 'lucide-react';
+import { formatTimestamp } from '../utils/format';
 
 const statusColors: Record<string, string> = {
   pending: 'text-[var(--color-text-muted)]',
@@ -22,7 +25,7 @@ const stepIcons: Record<string, React.ElementType> = {
 export function Workflows() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { data: workflows } = useWorkflows();
+  const { data: workflows, isLoading, error, refetch } = useWorkflows();
   const { data: detail } = useWorkflow(selectedId);
   const createMut = useCreateWorkflow();
   const cancelMut = useCancelWorkflow();
@@ -42,40 +45,52 @@ export function Workflows() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Workflow list */}
         <div className="space-y-3">
-          {workflows?.map((wf) => {
-            const completed = wf.steps?.filter((s) => s.status === 'completed').length ?? 0;
-            const total = wf.steps?.length ?? 0;
-            return (
-              <button
-                key={wf.id}
-                onClick={() => setSelectedId(wf.id)}
-                className={`w-full text-left bg-[var(--color-surface)] border rounded-xl p-4 hover:bg-[var(--color-surface-hover)] transition-colors flex items-center justify-between ${
-                  selectedId === wf.id ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)]'
-                }`}
-              >
-                <div className="space-y-1 min-w-0">
-                  <p className="font-mono text-sm truncate">{wf.id}</p>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className={statusColors[wf.status] || ''}>{wf.status}</span>
-                    <span className="text-[var(--color-text-muted)]">{completed}/{total} steps</span>
-                    {wf.totalCost && wf.totalCost !== '0' && (
-                      <span className="text-[var(--color-text-muted)]">{wf.totalCost} USDC</span>
-                    )}
+          {error ? (
+            <ErrorState message={error.message} onRetry={() => refetch()} />
+          ) : isLoading ? (
+            <ListSkeleton rows={3} />
+          ) : workflows && workflows.length > 0 ? (
+            workflows.map((wf) => {
+              const completed = wf.steps?.filter((s) => s.status === 'completed').length ?? 0;
+              const total = wf.steps?.length ?? 0;
+              return (
+                <button
+                  key={wf.id}
+                  onClick={() => setSelectedId(wf.id)}
+                  className={`w-full text-left bg-[var(--color-surface)] border rounded-xl p-4 hover:bg-[var(--color-surface-hover)] transition-colors flex items-center justify-between ${
+                    selectedId === wf.id ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)]'
+                  }`}
+                >
+                  <div className="space-y-1 min-w-0">
+                    <p className="font-mono text-sm truncate">{wf.id}</p>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className={statusColors[wf.status] || ''}>{wf.status}</span>
+                      <span className="text-[var(--color-text-muted)]">{completed}/{total} steps</span>
+                      {wf.totalCost && wf.totalCost !== '0' && (
+                        <span className="text-[var(--color-text-muted)]">{wf.totalCost} USDC</span>
+                      )}
+                    </div>
+                    <div className="w-full bg-[var(--color-border)] rounded-full h-1 mt-2">
+                      <div
+                        className="bg-[var(--color-primary)] rounded-full h-1 transition-all"
+                        style={{ width: total > 0 ? `${(completed / total) * 100}%` : '0%' }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-[var(--color-border)] rounded-full h-1 mt-2">
-                    <div
-                      className="bg-[var(--color-primary)] rounded-full h-1 transition-all"
-                      style={{ width: total > 0 ? `${(completed / total) * 100}%` : '0%' }}
-                    />
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-[var(--color-text-muted)] shrink-0 ml-3" />
-              </button>
-            );
-          })}
-          {(!workflows || workflows.length === 0) && (
+                  <ChevronRight size={16} className="text-[var(--color-text-muted)] shrink-0 ml-3" />
+                </button>
+              );
+            })
+          ) : (
             <div className="text-center py-12 text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
-              No workflows yet
+              <GitBranch size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="mb-3">No workflows yet</p>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                <Plus size={16} /> Create your first workflow
+              </button>
             </div>
           )}
         </div>
@@ -100,7 +115,7 @@ export function Workflows() {
               <p><span className="text-[var(--color-text-muted)]">Status:</span> <span className={statusColors[detail.status] || ''}>{detail.status}</span></p>
               <p><span className="text-[var(--color-text-muted)]">Input:</span> {detail.input}</p>
               {detail.output && <p><span className="text-[var(--color-text-muted)]">Output:</span> {detail.output}</p>}
-              <p><span className="text-[var(--color-text-muted)]">Created:</span> {new Date(detail.createdAt).toLocaleString()}</p>
+              <p><span className="text-[var(--color-text-muted)]">Created:</span> {formatTimestamp(detail.createdAt)}</p>
             </div>
 
             {/* Steps timeline */}

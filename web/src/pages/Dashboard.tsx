@@ -1,5 +1,8 @@
 import { useStatus, useLocalAgents, useAgents, useWorkflows } from '../hooks/useApi';
 import { Bot, Globe, GitBranch, Network, Copy } from 'lucide-react';
+import { StatSkeleton, Skeleton } from '../components/Skeleton';
+import { ErrorState } from '../components/ErrorState';
+import { formatRelative } from '../utils/format';
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: string | number; icon: React.ElementType }) {
   return (
@@ -16,12 +19,21 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: string |
 }
 
 export function Dashboard() {
-  const { data: status } = useStatus();
-  const { data: localAgents } = useLocalAgents();
+  const { data: status, isLoading: statusLoading, error: statusError, refetch: refetchStatus } = useStatus();
+  const { data: localAgents, isLoading: agentsLoading } = useLocalAgents();
   const { data: networkAgents } = useAgents();
   const { data: workflows } = useWorkflows();
 
   const activeWorkflows = workflows?.filter((w) => w.status === 'running').length ?? 0;
+
+  if (statusError) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <ErrorState message="Failed to connect to node" onRetry={() => refetchStatus()} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -29,14 +41,32 @@ export function Dashboard() {
 
       {/* Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Connected Peers" value={status?.connectedPeers ?? 0} icon={Network} />
-        <StatCard label="Local Agents" value={localAgents?.length ?? 0} icon={Bot} />
-        <StatCard label="Network Agents" value={networkAgents?.length ?? 0} icon={Globe} />
-        <StatCard label="Active Workflows" value={activeWorkflows} icon={GitBranch} />
+        {statusLoading || agentsLoading ? (
+          <>
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+          </>
+        ) : (
+          <>
+            <StatCard label="Connected Peers" value={status?.connectedPeers ?? 0} icon={Network} />
+            <StatCard label="Local Agents" value={localAgents?.length ?? 0} icon={Bot} />
+            <StatCard label="Network Agents" value={networkAgents?.length ?? 0} icon={Globe} />
+            <StatCard label="Active Workflows" value={activeWorkflows} icon={GitBranch} />
+          </>
+        )}
       </div>
 
       {/* Node info */}
-      {status && (
+      {statusLoading ? (
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-3">
+          <Skeleton className="h-6 w-40 mb-4" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      ) : status && (
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
           <h2 className="text-lg font-semibold mb-4">Node Information</h2>
           <div className="space-y-3 text-sm">
@@ -91,7 +121,7 @@ export function Dashboard() {
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-mono text-xs">{wf.id.slice(0, 12)}...</span>
                       <span className="text-xs text-[var(--color-warning)]">
-                        {completed}/{wf.steps.length} steps
+                        {completed}/{wf.steps.length} steps &middot; {formatRelative(wf.createdAt)}
                       </span>
                     </div>
                     <div className="w-full bg-[var(--color-border)] rounded-full h-1.5">

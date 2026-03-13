@@ -9,6 +9,7 @@ import (
 
 	"github.com/asabya/betar/cmd/betar/api/handlers"
 	"github.com/asabya/betar/internal/agent"
+	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/asabya/betar/internal/workflow"
@@ -22,17 +23,22 @@ type Server struct {
 	paymentService *marketplace.PaymentService
 }
 
-func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier, orch *workflow.Orchestrator, walletAddr, dataDir string) *Server {
+func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier, orch *workflow.Orchestrator, walletAddr, dataDir string, eip8004Client ...*eip8004.Client) *Server {
 	r := mux.NewRouter()
 
 	// Add handlers
 	handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
-	handlers.RegisterWalletHandlers(r)
+	handlers.RegisterWalletHandlers(r, paymentSvc)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
 	handlers.RegisterSessionHandlers(r, sessionStore)
 	handlers.RegisterStatusHandlers(r, p2pHost, walletAddr, dataDir)
 	if orch != nil {
 		handlers.RegisterWorkflowHandlers(r, orch)
+	}
+
+	// Register reputation endpoint if eip8004 client is available
+	if len(eip8004Client) > 0 && eip8004Client[0] != nil {
+		handlers.RegisterReputationHandlers(r, eip8004Client[0])
 	}
 
 	// A2A Agent Card discovery

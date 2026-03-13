@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/asabya/betar/cmd/betar/tui"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
+	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/eth"
 	"github.com/asabya/betar/internal/ipfs"
 	"github.com/asabya/betar/internal/marketplace"
@@ -24,6 +26,7 @@ import (
 	"github.com/asabya/betar/internal/session"
 	"github.com/asabya/betar/internal/workflow"
 	"github.com/asabya/betar/pkg/types"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/spf13/cobra"
@@ -46,6 +49,7 @@ var (
 	apiServer         *api.Server
 	sessionStore      *session.Store
 	workflowStore     *workflow.LevelDBStore
+	eip8004Client     *eip8004.Client
 )
 
 var rootCmd = &cobra.Command{
@@ -117,7 +121,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		}
 
 		apiPort, _ := cmd.Flags().GetInt("api-port")
-		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch, deriveWalletAddress(cfg.Ethereum.PrivateKey), cfg.Storage.DataDir)
+		apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch, deriveWalletAddress(cfg.Ethereum.PrivateKey), cfg.Storage.DataDir, eip8004Client)
 		if err := apiServer.Start(); err != nil {
 			fmt.Printf("warning: failed to start API server: %v\n", err)
 		} else {
@@ -471,6 +475,7 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 			Addrs:     p2pHost.AddrStrings(),
 			Protocols: []string{p2p.X402ProtocolID},
 			Timestamp: time.Now().Unix(),
+			TokenID:   tokenIDToString(registered.TokenID),
 		}
 		listingService.UpsertLocalListing(serveMsg)
 		if data, err := json.Marshal(serveMsg); err == nil {
@@ -546,7 +551,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	orch := workflow.NewOrchestrator(agentManager, workflowStore)
 
 	apiPort, _ := cmd.Flags().GetInt("api-port")
-	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch, deriveWalletAddress(cfg.Ethereum.PrivateKey), cfg.Storage.DataDir)
+	apiServer = api.NewServer(apiPort, agentManager, listingService, orderService, p2pHost, paymentService, sessionStore, orch, deriveWalletAddress(cfg.Ethereum.PrivateKey), cfg.Storage.DataDir, eip8004Client)
 	if err := apiServer.Start(); err != nil {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
@@ -660,6 +665,21 @@ func initRuntime(cmd *cobra.Command) error {
 		sessionStore = nil
 	}
 
+	// Initialize EIP-8004 on-chain registry client
+	if cfg.Ethereum != nil && cfg.Ethereum.IdentityAddr != "" {
+		eip8004Client, err = eip8004.NewClient(ctx, cfg.Ethereum.RPCURL, cfg.Ethereum.PrivateKey,
+			ethcommon.HexToAddress(cfg.Ethereum.IdentityAddr),
+			ethcommon.HexToAddress(cfg.Ethereum.ReputationAddr),
+			ethcommon.HexToAddress(cfg.Ethereum.ValidationAddr),
+			cfg.Ethereum.ChainID)
+		if err != nil {
+			fmt.Printf("Warning: EIP-8004 client initialization failed: %v (on-chain registration disabled)\n", err)
+			eip8004Client = nil
+		} else {
+			fmt.Println("EIP-8004 client initialized")
+		}
+	}
+
 	agentManager, err = agent.NewManager(agent.ADKConfig{
 		AppName:       "betar",
 		ModelName:     cfg.Agent.Model,
@@ -667,9 +687,19 @@ func initRuntime(cmd *cobra.Command) error {
 		Provider:      cfg.Agent.Provider,
 		OpenAIAPIKey:  cfg.Agent.OpenAIAPIKey,
 		OpenAIBaseURL: cfg.Agent.OpenAIBaseURL,
-	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr, sessionStore)
+	}, ipfsClient, p2pHost, listingService, cfg.P2P.PrivKey, paymentService, walletAddr, sessionStore, eip8004Client)
 	if err != nil {
 		return fmt.Errorf("failed to create agent manager: %w", err)
+	}
+
+	// Initialize EIP-8004 token store to persist on-chain tokenIDs across restarts.
+	if eip8004Client != nil {
+		tokenStore, tsErr := eip8004.NewTokenStore(cfg.Storage.DataDir)
+		if tsErr != nil {
+			fmt.Printf("Warning: failed to open EIP-8004 token store: %v\n", tsErr)
+		} else {
+			agentManager.SetTokenStore(tokenStore)
+		}
 	}
 
 	// Wire up the x402 stream handler so the agent manager can serve /x402/libp2p/1.0.0 requests.
@@ -704,6 +734,7 @@ func initRuntime(cmd *cobra.Command) error {
 						Addrs:     l.Addrs,
 						Protocols: l.Protocols,
 						Timestamp: l.Timestamp,
+						TokenID:   l.TokenID,
 					})
 				}
 			}()
@@ -748,6 +779,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		Addrs:     p2pHost.AddrStrings(),
 		Protocols: protocols,
 		Timestamp: time.Now().Unix(),
+		TokenID:   tokenIDToString(registered.TokenID),
 	}
 
 	return registered, listing, nil
@@ -774,6 +806,14 @@ func runListingAnnouncer(ctx context.Context, interval time.Duration, next func(
 			}
 		}
 	}
+}
+
+// tokenIDToString converts a *big.Int tokenID to string, returning "" for nil.
+func tokenIDToString(id *big.Int) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }
 
 // deriveWalletAddress derives the Ethereum address hex from a private key hex string.
@@ -1004,6 +1044,7 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 				Addrs:     p2pHost.AddrStrings(),
 				Protocols: []string{p2p.X402ProtocolID},
 				Timestamp: time.Now().Unix(),
+				TokenID:   tokenIDToString(registered.TokenID),
 			}
 			listingService.UpsertLocalListing(msg)
 			if data, err := json.Marshal(msg); err == nil {

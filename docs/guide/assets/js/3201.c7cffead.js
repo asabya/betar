@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkbetar_docs=globalThis.webpackChunkbetar_docs||[]).push([[3201],{3201(e,a,s){s.d(a,{createPieServices:()=>c.f});var c=s(7761);s(6902)}}]);

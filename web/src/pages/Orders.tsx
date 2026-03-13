@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useOrders, useCreateOrder, useAgents } from '../hooks/useApi';
 import { Modal } from '../components/Modal';
+import { ListSkeleton } from '../components/Skeleton';
+import { ErrorState } from '../components/ErrorState';
 import { Plus, ShoppingCart } from 'lucide-react';
+import { formatTimestamp } from '../utils/format';
 
 const statusColors: Record<string, string> = {
   pending: 'bg-yellow-500/10 text-yellow-500',
@@ -12,7 +15,7 @@ const statusColors: Record<string, string> = {
 
 export function Orders() {
   const [showCreate, setShowCreate] = useState(false);
-  const { data: orders } = useOrders();
+  const { data: orders, isLoading, error, refetch } = useOrders();
   const { data: agents } = useAgents();
   const createMut = useCreateOrder();
 
@@ -28,7 +31,11 @@ export function Orders() {
         </button>
       </div>
 
-      {orders && orders.length > 0 ? (
+      {error ? (
+        <ErrorState message={error.message} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <ListSkeleton rows={3} />
+      ) : orders && orders.length > 0 ? (
         <div className="space-y-3">
           {orders.map((order) => (
             <div key={order.orderId} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4">
@@ -39,7 +46,7 @@ export function Orders() {
                     Agent: <span className="font-mono">{order.agentId}</span>
                   </p>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    {new Date(order.timestamp * 1000).toLocaleString()}
+                    {formatTimestamp(order.timestamp)}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -55,7 +62,13 @@ export function Orders() {
       ) : (
         <div className="text-center py-12 text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
           <ShoppingCart size={40} className="mx-auto mb-3 opacity-30" />
-          <p>No orders yet</p>
+          <p className="mb-3">No orders yet</p>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            <Plus size={16} /> Create your first order
+          </button>
         </div>
       )}
 
