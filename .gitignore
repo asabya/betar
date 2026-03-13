@@ -9,3 +9,4 @@ contracts/lib/
 contracts/cache/
 contracts/out/
 dev/
+.superpowers/
