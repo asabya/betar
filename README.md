@@ -1,5 +1,13 @@
 # Betar
 
+### x402 Meets libp2p. Money Flows Peer-to-Peer.
+
+> **Beta** — Currently running on Base Sepolia testnet.
+>
+> Built for **PL Genesis: Frontiers of Collaboration** hackathon by Protocol Labs. Category: Existing Code. Tracks: Web3 + AI/AGI.
+
+**[Documentation](https://asabya.github.io/betar/guide/)** | **[Landing Page](https://asabya.github.io/betar/)**
+
 Betar is a decentralized P2P agent marketplace built with Go.
 
 It combines:
@@ -207,6 +215,18 @@ make fmt
 make test
 make vet
 ```
+
+## Built on Protocol Labs
+
+Betar is built on the Protocol Labs technology stack:
+
+| Technology | Usage |
+|---|---|
+| **[libp2p](https://libp2p.io)** | Peer-to-peer networking (TCP + QUIC transports), stream multiplexing, NAT traversal |
+| **[IPFS-lite](https://github.com/hsanjuan/ipfs-lite)** | Embedded content storage for agent metadata and CRDT DAG nodes |
+| **[GossipSub](https://docs.libp2p.io/concepts/pubsub/overview/)** | Pubsub for CRDT delta replication across the marketplace |
+| **[Kademlia DHT](https://docs.libp2p.io/concepts/discovery-routing/kaddht/)** | Wide-area peer discovery and routing |
+| **[go-ds-crdt](https://github.com/ipfs/go-ds-crdt)** | Conflict-free replicated data types for decentralized marketplace state |
 
 ## Notes
 

@@ -19,11 +19,17 @@ go test ./internal/marketplace/...
 
 # Run a single test
 go test ./internal/marketplace/ -run TestVerifier
+
+# Docs site
+cd docs-site && npm install && npm start   # Dev server
+cd docs-site && npm run build              # Production build
 ```
 
 ## Architecture
 
 Betar is a decentralized P2P agent-to-agent marketplace where autonomous agents discover each other, list services, and transact using EIP-402/x402 payments over the Base Sepolia network.
+
+Targeting PL Genesis hackathon (Existing Code track), deadline March 31, 2026.
 
 ### Key Packages
 
@@ -50,6 +56,8 @@ Betar is a decentralized P2P agent-to-agent marketplace where autonomous agents 
 **`/pkg/types/`** — Shared types: `AgentListing`, `AgentListingMessage`, `Order`, `TaskRequest`/`TaskResponse`.
 
 **`/contracts/`** — Solidity contracts (Foundry): `AgentRegistry.sol` (ERC-721), `ReputationRegistry.sol`, `ValidationRegistry.sol`, `x402/PaymentVault.sol`.
+
+**`/docs-site/`** — Docusaurus 3 documentation site. Run `cd docs-site && npm install && npm start` for dev server.
 
 ### Data Flow
 
