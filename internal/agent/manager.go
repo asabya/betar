@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/ipfs"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
@@ -42,6 +44,8 @@ type Manager struct {
 	walletAddress     string
 	sessionStore      SessionStorer
 	nodeDID           string // this node's DID (did:key:xxx) for identifying as caller
+	eip8004           *eip8004.Client
+	eip8004Tokens     *eip8004.TokenStore
 
 	mu          sync.RWMutex
 	localAgents map[string]*LocalAgent
@@ -57,10 +61,11 @@ type LocalAgent struct {
 	AgentID     string    `json:"agentID"` // ADK runtime agent ID
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"createdAt"`
+	TokenID     *big.Int  `json:"tokenId,omitempty"` // EIP-8004 on-chain token ID
 }
 
 // NewManager creates a new agent manager
-func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, privKey crypto.PrivKey, paymentSvc *marketplace.PaymentService, walletAddr string, sessionStore SessionStorer) (*Manager, error) {
+func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host, listingService *marketplace.AgentListingService, privKey crypto.PrivKey, paymentSvc *marketplace.PaymentService, walletAddr string, sessionStore SessionStorer, eip8004Client ...*eip8004.Client) (*Manager, error) {
 	if ipfsClient == nil {
 		return nil, fmt.Errorf("ipfs client is required")
 	}
@@ -83,8 +88,16 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 		nodeDID:        GenerateDID(privKey, runtimeCfg.AppName, "node"),
 		localAgents:    make(map[string]*LocalAgent),
 	}
+	if len(eip8004Client) > 0 && eip8004Client[0] != nil {
+		m.eip8004 = eip8004Client[0]
+	}
 
 	return m, nil
+}
+
+// SetTokenStore sets the EIP-8004 token store for persisting on-chain tokenIDs.
+func (m *Manager) SetTokenStore(ts *eip8004.TokenStore) {
+	m.eip8004Tokens = ts
 }
 
 // RegisterAgent registers a new agent locally and publishes to marketplace
@@ -160,6 +173,33 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		AgentID:     runtimeAgentID,
 		Status:      "active",
 		CreatedAt:   time.Now(),
+	}
+
+	// Best-effort on-chain registration via EIP-8004
+	if m.eip8004 != nil {
+		// Check if this agent was already registered on-chain (by name).
+		if m.eip8004Tokens != nil {
+			if existing := m.eip8004Tokens.Get(spec.Name); existing != nil {
+				agent.TokenID = existing
+				fmt.Printf("EIP-8004: agent %q already registered on-chain with tokenID=%s (skipping)\n", spec.Name, existing.String())
+				goto skipOnChain
+			}
+		}
+		{
+			tokenID, err := m.eip8004.RegisterIdentity(ctx, metadataCID)
+			if err != nil {
+				fmt.Printf("warning: EIP-8004 on-chain registration failed: %v\n", err)
+			} else if tokenID != nil {
+				agent.TokenID = tokenID
+				fmt.Printf("EIP-8004: agent registered on-chain with tokenID=%s\n", tokenID.String())
+				if m.eip8004Tokens != nil {
+					if err := m.eip8004Tokens.Put(spec.Name, tokenID); err != nil {
+						fmt.Printf("warning: failed to persist EIP-8004 tokenID: %v\n", err)
+					}
+				}
+			}
+		}
+	skipOnChain:
 	}
 
 	// Store locally, indexed by the runtime agent ID.
@@ -619,6 +659,7 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 		TxHash:        txHash,
 		Body:          respBody,
 		SellerDID:     resource,
+		SellerTokenID: m.agentTokenIDString(resource),
 	}
 	respData, err := json.Marshal(resp)
 	if err != nil {
@@ -686,6 +727,7 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 		TxHash:        txHash,
 		Body:          respBody,
 		SellerDID:     req.Resource,
+		SellerTokenID: m.agentTokenIDString(req.Resource),
 	}
 	respData, _ := json.Marshal(resp)
 	return marketplace.MsgTypeX402Response, respData, nil
@@ -721,6 +763,7 @@ func (m *Manager) executeAndRespond(ctx context.Context, correlationID, resource
 		CorrelationID: correlationID,
 		Body:          respBody,
 		SellerDID:     resource,
+		SellerTokenID: m.agentTokenIDString(resource),
 	}
 	respData, _ := json.Marshal(resp)
 	return marketplace.MsgTypeX402Response, respData, nil
@@ -810,23 +853,44 @@ func (m *Manager) RemoteExecuteX402(ctx context.Context, peerID peer.ID, agentID
 		switch respType2 {
 		case marketplace.MsgTypeX402Response:
 			output, err := extractX402Output(respData2)
-			if err == nil && m.sessionStore != nil {
+			if err == nil {
 				var resp marketplace.X402Response
 				_ = json.Unmarshal(respData2, &resp)
-				ex := types.Exchange{
-					RequestID: correlationID,
-					Input:     input,
-					Output:    output,
-					Timestamp: time.Now().UTC(),
-					Payment: &types.PaymentRecord{
-						PaymentID: resp.PaymentID,
-						TxHash:    resp.TxHash,
-						Amount:    pr.PaymentRequirements.Amount,
-						Payer:     m.walletAddress,
-						PaidAt:    time.Now().UTC(),
-					},
+				if m.sessionStore != nil {
+					ex := types.Exchange{
+						RequestID: correlationID,
+						Input:     input,
+						Output:    output,
+						Timestamp: time.Now().UTC(),
+						Payment: &types.PaymentRecord{
+							PaymentID: resp.PaymentID,
+							TxHash:    resp.TxHash,
+							Amount:    pr.PaymentRequirements.Amount,
+							Payer:     m.walletAddress,
+							PaidAt:    time.Now().UTC(),
+						},
+					}
+					_ = m.sessionStore.AddExchange(ctx, agentID, m.nodeDID, ex)
 				}
-				_ = m.sessionStore.AddExchange(ctx, agentID, m.nodeDID, ex)
+				// Auto-submit reputation feedback after paid execution
+				if m.eip8004 != nil && resp.SellerTokenID != "" {
+					go func() {
+						tokenID := new(big.Int)
+						if _, ok := tokenID.SetString(resp.SellerTokenID, 10); !ok {
+							return
+						}
+						hash := sha256.Sum256([]byte(correlationID))
+						var feedbackHash [32]byte
+						copy(feedbackHash[:], hash[:])
+						fbErr := m.eip8004.GiveFeedback(context.Background(), tokenID,
+							100, 0, "execution", "", agentID, "", feedbackHash)
+						if fbErr != nil {
+							fmt.Printf("[RemoteExecuteX402] reputation feedback failed: %v\n", fbErr)
+						} else {
+							fmt.Printf("[RemoteExecuteX402] reputation feedback submitted for tokenID=%s\n", resp.SellerTokenID)
+						}
+					}()
+				}
 			}
 			return output, err
 		case marketplace.MsgTypeX402Error:
@@ -939,6 +1003,17 @@ func extractX402ErrorMessage(data []byte) (string, error) {
 		return "", fmt.Errorf("x402 error (unparseable): %s", string(data))
 	}
 	return "", fmt.Errorf("x402 error %d (%s): %s", e.ErrorCode, e.ErrorName, e.Message)
+}
+
+// agentTokenIDString returns the string representation of a local agent's on-chain tokenID.
+func (m *Manager) agentTokenIDString(agentID string) string {
+	m.mu.RLock()
+	la, ok := m.localAgents[agentID]
+	m.mu.RUnlock()
+	if ok && la != nil && la.TokenID != nil {
+		return la.TokenID.String()
+	}
+	return ""
 }
 
 // AgentSpec represents agent specification for registration

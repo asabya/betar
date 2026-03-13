@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { useLocalAgents, useAgents, useRegisterAgent, useExecuteAgent } from '../hooks/useApi';
+import { useLocalAgents, useAgents, useRegisterAgent, useExecuteAgent, useReputation } from '../hooks/useApi';
 import { Modal } from '../components/Modal';
-import { Plus, Play, Bot, Globe } from 'lucide-react';
+import { CardSkeleton } from '../components/Skeleton';
+import { ErrorState } from '../components/ErrorState';
+import { Plus, Play, Bot, Globe, Shield, Star, Hash } from 'lucide-react';
 import type { AgentSpec } from '../api/client';
 
 type Tab = 'local' | 'network';
@@ -13,8 +15,8 @@ export function Agents() {
   const [executeInput, setExecuteInput] = useState('');
   const [executeResult, setExecuteResult] = useState<string | null>(null);
 
-  const { data: localAgents } = useLocalAgents();
-  const { data: networkAgents } = useAgents();
+  const { data: localAgents, isLoading: localLoading, error: localError, refetch: refetchLocal } = useLocalAgents();
+  const { data: networkAgents, isLoading: networkLoading, error: networkError, refetch: refetchNetwork } = useAgents();
   const registerMut = useRegisterAgent();
   const executeMut = useExecuteAgent();
 
@@ -34,6 +36,10 @@ export function Agents() {
     );
   };
 
+  const isLoading = tab === 'local' ? localLoading : networkLoading;
+  const error = tab === 'local' ? localError : networkError;
+  const refetch = tab === 'local' ? refetchLocal : refetchNetwork;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -52,60 +58,120 @@ export function Agents() {
         <TabButton active={tab === 'network'} onClick={() => setTab('network')} icon={Globe} label="Network" count={networkAgents?.length} />
       </div>
 
+      {/* Error state */}
+      {error && <ErrorState message={error.message} onRetry={() => refetch()} />}
+
+      {/* Loading state */}
+      {!error && isLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      )}
+
       {/* Agent grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {tab === 'local' &&
-          localAgents?.map((agent) => (
-            <div key={agent.id} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 flex flex-col gap-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-semibold">{agent.name}</p>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-1">{agent.description}</p>
+      {!error && !isLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {tab === 'local' &&
+            localAgents?.map((agent) => (
+              <div key={agent.id} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 flex flex-col gap-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold">{agent.name}</p>
+                    <p className="text-xs text-[var(--color-text-muted)] mt-1">{agent.description}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {agent.tokenId && (
+                      <span className="flex items-center gap-1 text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full" title={`Token #${agent.tokenId}`}>
+                        <Hash size={10} /> {agent.tokenId.length > 6 ? agent.tokenId.slice(0, 6) + '...' : agent.tokenId}
+                      </span>
+                    )}
+                    <span className="text-xs bg-[var(--color-success)]/10 text-[var(--color-success)] px-2 py-0.5 rounded-full">
+                      {agent.status || 'active'}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-xs bg-[var(--color-success)]/10 text-[var(--color-success)] px-2 py-0.5 rounded-full">
-                  {agent.status || 'active'}
-                </span>
+                <p className="text-xs font-mono text-[var(--color-text-muted)] break-all">{agent.agentID}</p>
+                {agent.tokenId && <ReputationBadge tokenId={agent.tokenId} />}
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-[var(--color-border)]">
+                  <span className="text-sm font-medium text-[var(--color-primary)]">
+                    {agent.price > 0 ? `${agent.price} USDC` : 'Free'}
+                  </span>
+                  <button
+                    onClick={() => { setExecuteTarget({ id: agent.agentID, name: agent.name }); setExecuteInput(''); setExecuteResult(null); }}
+                    className="flex items-center gap-1 text-xs bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Play size={12} /> Execute
+                  </button>
+                </div>
               </div>
-              <p className="text-xs font-mono text-[var(--color-text-muted)] break-all">{agent.agentID}</p>
-              <div className="flex items-center justify-between mt-auto pt-2 border-t border-[var(--color-border)]">
-                <span className="text-sm font-medium text-[var(--color-primary)]">
-                  {agent.price > 0 ? `${agent.price} USDC` : 'Free'}
-                </span>
-                <button
-                  onClick={() => { setExecuteTarget({ id: agent.agentID, name: agent.name }); setExecuteInput(''); setExecuteResult(null); }}
-                  className="flex items-center gap-1 text-xs bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  <Play size={12} /> Execute
-                </button>
-              </div>
-            </div>
-          ))}
+            ))}
 
-        {tab === 'network' &&
-          networkAgents?.map((agent) => (
-            <div key={agent.id} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 flex flex-col gap-3">
-              <div>
-                <p className="font-semibold">{agent.name}</p>
-                <p className="text-xs font-mono text-[var(--color-text-muted)] mt-1 break-all">{agent.id}</p>
+          {tab === 'network' &&
+            networkAgents?.map((agent) => (
+              <div key={agent.id} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 flex flex-col gap-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold">{agent.name}</p>
+                    <p className="text-xs font-mono text-[var(--color-text-muted)] mt-1 break-all">{agent.id}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {agent.tokenId && (
+                      <span className="flex items-center gap-1 text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full" title={`Token #${agent.tokenId}`}>
+                        <Hash size={10} /> {agent.tokenId.length > 6 ? agent.tokenId.slice(0, 6) + '...' : agent.tokenId}
+                      </span>
+                    )}
+                    {agent.protocols?.includes('/x402/libp2p/1.0.0') && (
+                      <span className="flex items-center gap-1 text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">
+                        <Shield size={10} /> x402
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {agent.tokenId && <ReputationBadge tokenId={agent.tokenId} />}
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-[var(--color-border)]">
+                  <span className="text-sm font-medium text-[var(--color-primary)]">
+                    {agent.price > 0 ? `${agent.price} USDC` : 'Free'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                      {agent.sellerId.slice(0, 12)}...
+                    </span>
+                    <button
+                      onClick={() => { setExecuteTarget({ id: agent.id, name: agent.name }); setExecuteInput(''); setExecuteResult(null); }}
+                      className="flex items-center gap-1 text-xs bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Play size={12} /> Execute
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-auto pt-2 border-t border-[var(--color-border)]">
-                <span className="text-sm font-medium text-[var(--color-primary)]">
-                  {agent.price > 0 ? `${agent.price} USDC` : 'Free'}
-                </span>
-                <span className="text-xs text-[var(--color-text-muted)]">
-                  Seller: {agent.sellerId.slice(0, 12)}...
-                </span>
-              </div>
-            </div>
-          ))}
+            ))}
 
-        {((tab === 'local' && (!localAgents || localAgents.length === 0)) ||
-          (tab === 'network' && (!networkAgents || networkAgents.length === 0))) && (
-          <div className="col-span-full text-center py-12 text-[var(--color-text-muted)]">
-            No {tab} agents found
-          </div>
-        )}
-      </div>
+          {/* Empty states with CTAs */}
+          {tab === 'local' && (!localAgents || localAgents.length === 0) && (
+            <div className="col-span-full text-center py-12 text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+              <Bot size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="mb-3">No local agents registered</p>
+              <button
+                onClick={() => setShowRegister(true)}
+                className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                <Plus size={16} /> Register your first agent
+              </button>
+            </div>
+          )}
+
+          {tab === 'network' && (!networkAgents || networkAgents.length === 0) && (
+            <div className="col-span-full text-center py-12 text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+              <Globe size={40} className="mx-auto mb-3 opacity-30" />
+              <p>No network agents discovered yet</p>
+              <p className="text-xs mt-1">Agents will appear as peers connect</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Register Modal */}
       <Modal open={showRegister} onClose={() => setShowRegister(false)} title="Register Agent">
@@ -136,6 +202,18 @@ export function Agents() {
           )}
         </div>
       </Modal>
+    </div>
+  );
+}
+
+function ReputationBadge({ tokenId }: { tokenId: string }) {
+  const { data } = useReputation(tokenId);
+  if (!data || data.count === 0) return null;
+  return (
+    <div className="flex items-center gap-1 text-xs text-yellow-400">
+      <Star size={12} fill="currentColor" />
+      <span>{data.value}{data.decimals > 0 ? `e-${data.decimals}` : ''}</span>
+      <span className="text-[var(--color-text-muted)]">({data.count} reviews)</span>
     </div>
   );
 }

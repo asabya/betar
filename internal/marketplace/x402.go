@@ -89,6 +89,7 @@ type X402Response struct {
 	TxHash        string `json:"tx_hash"`
 	Body          []byte `json:"body"`
 	SellerDID     string `json:"seller_did,omitempty"`
+	SellerTokenID string `json:"seller_token_id,omitempty"`
 }
 
 // X402Error is sent server → client when a typed error occurs.

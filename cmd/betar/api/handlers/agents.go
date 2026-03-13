@@ -3,9 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 
 	"github.com/asabya/betar/internal/agent"
+	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
 	"github.com/gorilla/mux"
@@ -91,4 +93,30 @@ func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"output": output})
+}
+
+func RegisterReputationHandlers(r *mux.Router, eip8004Client *eip8004.Client) {
+	r.HandleFunc("/agents/reputation/{tokenId}", handleGetReputation(eip8004Client)).Methods("GET")
+}
+
+func handleGetReputation(eip8004Client *eip8004.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tokenIDStr := mux.Vars(r)["tokenId"]
+		tokenID := new(big.Int)
+		if _, ok := tokenID.SetString(tokenIDStr, 10); !ok {
+			http.Error(w, "invalid tokenId", http.StatusBadRequest)
+			return
+		}
+		count, value, decimals, err := eip8004Client.GetReputationSummary(r.Context(), tokenID, "", "")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to get reputation: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"count":    count,
+			"value":    value,
+			"decimals": decimals,
+		})
+	}
 }

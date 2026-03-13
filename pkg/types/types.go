@@ -32,6 +32,7 @@ type AgentListing struct {
 	Addrs     []string `json:"addrs,omitempty"`     // Multiaddrs to dial seller peer
 	Protocols []string `json:"protocols,omitempty"` // Supported app protocols
 	Timestamp int64    `json:"timestamp"`           // Unix timestamp
+	TokenID   string   `json:"tokenId,omitempty"`   // EIP-8004 on-chain token ID
 }
 
 // Order represents a marketplace order
@@ -56,6 +57,7 @@ type AgentListingMessage struct {
 	Addrs     []string `json:"addrs,omitempty"`
 	Protocols []string `json:"protocols,omitempty"`
 	Timestamp int64    `json:"timestamp"`
+	TokenID   string   `json:"tokenId,omitempty"`
 }
 
 // OrderMessage represents a pubsub message for order updates

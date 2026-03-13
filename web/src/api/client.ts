@@ -36,6 +36,7 @@ export interface AgentListing {
   addrs?: string[];
   protocols?: string[];
   timestamp: number;
+  tokenId?: string;
 }
 
 export interface LocalAgent {
@@ -47,6 +48,13 @@ export interface LocalAgent {
   agentID: string;
   status: string;
   createdAt: string;
+  tokenId?: string;
+}
+
+export interface ReputationData {
+  count: number;
+  value: number;
+  decimals: number;
 }
 
 export interface AgentSpec {
@@ -126,6 +134,7 @@ export interface Workflow {
 export interface WalletBalance {
   address: string;
   balance: number;
+  usdcBalance?: number;
 }
 
 // API functions
@@ -161,4 +170,7 @@ export const api = {
   getWorkflow: (id: string) => request<Workflow>(`/workflows/${encodeURIComponent(id)}`),
   cancelWorkflow: (id: string) =>
     request<Workflow>(`/workflows/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  getReputation: (tokenId: string) =>
+    request<ReputationData>(`/agents/reputation/${encodeURIComponent(tokenId)}`),
 };

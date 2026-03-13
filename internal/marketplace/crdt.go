@@ -91,6 +91,7 @@ func (c *ListingCRDT) Apply(msg *types.AgentListingMessage) bool {
 		Addrs:     msg.Addrs,
 		Protocols: msg.Protocols,
 		Timestamp: msg.Timestamp,
+		TokenID:   msg.TokenID,
 	}
 
 	payload, err := json.Marshal(listing)
