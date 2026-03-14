@@ -1,23 +1,23 @@
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: #c48a2e;
+  --ifm-color-primary-dark: #b07b28;
+  --ifm-color-primary-darker: #a67425;
+  --ifm-color-primary-darkest: #885f1e;
+  --ifm-color-primary-light: #d09a3e;
+  --ifm-color-primary-lighter: #d5a34d;
+  --ifm-color-primary-lightest: #dfb870;
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
+  --ifm-color-primary: #e09f3e;
+  --ifm-color-primary-dark: #d99029;
+  --ifm-color-primary-darker: #cd8826;
+  --ifm-color-primary-darkest: #a86f1f;
+  --ifm-color-primary-light: #e5ad58;
+  --ifm-color-primary-lighter: #e8b468;
+  --ifm-color-primary-lightest: #eec78f;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
 
@@ -31,6 +31,20 @@
   margin: 0 auto;
 }
 
+.hero__beta {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  margin-top: 0.5rem;
+}
+
+.hero__ctas {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+
 .features-section {
   padding: 4rem 0;
 }
@@ -38,10 +52,25 @@
 .feature-card {
   text-align: center;
   padding: 2rem;
+  border-radius: 8px;
+  transition: box-shadow 0.2s;
+}
+
+.feature-card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='dark'] .feature-card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.feature-card__icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .feature-card h3 {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .built-on-section {
@@ -66,4 +95,22 @@
   border-radius: 8px;
   border: 1px solid var(--ifm-color-emphasis-300);
   font-weight: 600;
+  transition: border-color 0.2s;
+}
+
+.tech-item:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+.quicklinks-section {
+  padding: 3rem 0;
+}
+
+.quicklinks-section__title {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.quicklinks-section__col {
+  margin-bottom: 1rem;
 }

@@ -13,18 +13,38 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+/* ── Skip Link ── */
+.skip-link{
+  position:absolute;
+  top:-100%;left:50%;
+  transform:translateX(-50%);
+  background:var(--accent);color:var(--text-on-accent);
+  padding:12px 24px;border-radius:0 0 8px 8px;
+  font-family:var(--font-body);font-size:14px;font-weight:600;
+  text-decoration:none;z-index:200;
+  transition:top 0.2s;
+}
+.skip-link:focus{top:0}
+/* ── Focus Indicators ── */
+:focus-visible{
+  outline:2px solid var(--accent-light);
+  outline-offset:3px;
+  border-radius:4px;
+}
+a:focus:not(:focus-visible),button:focus:not(:focus-visible){outline:none}
 :root{
-  --bg:#06060f;
-  --surface:rgba(22,24,42,0.6);
-  --border:rgba(99,102,241,0.08);
-  --border-hover:rgba(99,102,241,0.2);
-  --indigo:#6366f1;
-  --indigo-light:#818cf8;
-  --indigo-glow:rgba(99,102,241,0.35);
-  --indigo-subtle:rgba(99,102,241,0.08);
-  --text:#e8ecf4;
-  --text-muted:#7a839b;
-  --text-dim:#4a5068;
+  --bg:#0c0a09;
+  --surface:rgba(28,25,23,0.7);
+  --border:rgba(224,159,62,0.08);
+  --border-hover:rgba(224,159,62,0.22);
+  --accent:#e09f3e;
+  --accent-light:#e8b468;
+  --accent-glow:rgba(224,159,62,0.3);
+  --accent-subtle:rgba(224,159,62,0.08);
+  --text:#f0ece6;
+  --text-muted:#a8a29e;
+  --text-dim:#78716c;
+  --text-on-accent:#fef9f0;
   --font-display:'Sora',system-ui,sans-serif;
   --font-body:'DM Sans',system-ui,sans-serif;
   --font-mono:'JetBrains Mono',monospace;
@@ -38,7 +58,7 @@ body{
   overflow-x:hidden;
   -webkit-font-smoothing:antialiased;
 }
-::selection{background:var(--indigo);color:white}
+::selection{background:var(--accent);color:var(--text-on-accent)}
 
 /* ── Floating Orbs ── */
 .orb{
@@ -51,28 +71,28 @@ body{
 .orb-1{
   width:600px;height:600px;
   top:-180px;right:-120px;
-  background:radial-gradient(circle,rgba(99,102,241,0.18) 0%,rgba(99,102,241,0.04) 40%,transparent 70%);
+  background:radial-gradient(circle,rgba(224,159,62,0.15) 0%,rgba(224,159,62,0.04) 40%,transparent 70%);
   filter:blur(60px);
   animation:drift-1 22s ease-in-out infinite alternate;
 }
 .orb-2{
   width:500px;height:500px;
   bottom:10%;left:-160px;
-  background:radial-gradient(circle,rgba(129,140,248,0.14) 0%,rgba(99,102,241,0.03) 45%,transparent 70%);
+  background:radial-gradient(circle,rgba(232,180,104,0.12) 0%,rgba(224,159,62,0.03) 45%,transparent 70%);
   filter:blur(80px);
   animation:drift-2 18s ease-in-out infinite alternate;
 }
 .orb-3{
   width:400px;height:400px;
   top:55%;right:5%;
-  background:radial-gradient(circle,rgba(139,92,246,0.12) 0%,transparent 65%);
+  background:radial-gradient(circle,rgba(200,140,50,0.1) 0%,transparent 65%);
   filter:blur(70px);
   animation:drift-3 25s ease-in-out infinite alternate;
 }
 .orb-4{
   width:350px;height:350px;
   top:30%;left:20%;
-  background:radial-gradient(circle,rgba(99,102,241,0.1) 0%,transparent 60%);
+  background:radial-gradient(circle,rgba(224,159,62,0.1) 0%,transparent 60%);
   filter:blur(90px);
   animation:drift-4 20s ease-in-out infinite alternate;
 }
@@ -98,7 +118,7 @@ body::after{
   content:'';
   position:fixed;
   inset:0;
-  z-index:9999;
+  z-index:50;
   pointer-events:none;
   opacity:0.025;
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
@@ -111,7 +131,7 @@ nav{
   position:fixed;
   top:0;width:100%;
   z-index:100;
-  background:rgba(6,6,15,0.75);
+  background:rgba(12,10,9,0.75);
   backdrop-filter:blur(16px);
   -webkit-backdrop-filter:blur(16px);
   border-bottom:1px solid var(--border);
@@ -134,7 +154,7 @@ nav{
   text-decoration:none;
   letter-spacing:-0.5px;
 }
-.logo span{color:var(--indigo)}
+.logo span{color:var(--accent)}
 .nav-links{
   display:flex;
   align-items:center;
@@ -151,16 +171,17 @@ nav{
 }
 .nav-links a:hover{color:var(--text)}
 .nav-links .gh-link{
-  color:var(--indigo-light);
+  color:var(--accent-light);
   font-weight:600;
   display:flex;align-items:center;gap:6px;
 }
-.nav-links .gh-link:hover{color:var(--indigo)}
+.nav-links .gh-link:hover{color:var(--accent)}
 .menu-toggle{
   display:none;
   background:none;border:none;
   color:var(--text-muted);cursor:pointer;
-  padding:4px;
+  padding:10px;
+  min-width:44px;min-height:44px;
 }
 .menu-toggle svg{width:24px;height:24px}
 
@@ -180,9 +201,9 @@ nav{
   display:inline-flex;
   align-items:center;
   gap:8px;
-  background:var(--indigo-subtle);
-  border:1px solid rgba(99,102,241,0.15);
-  color:var(--indigo-light);
+  background:var(--accent-subtle);
+  border:1px solid rgba(224,159,62,0.15);
+  color:var(--accent-light);
   padding:6px 18px;
   border-radius:100px;
   font-size:12px;
@@ -196,15 +217,15 @@ nav{
   content:'';
   width:6px;height:6px;
   border-radius:50%;
-  background:var(--indigo);
-  box-shadow:0 0 8px var(--indigo-glow);
+  background:var(--accent);
+  box-shadow:0 0 8px var(--accent-glow);
   animation:pulse 2s ease-in-out infinite;
 }
 @keyframes pulse{
   0%,100%{opacity:1;transform:scale(1)}
   50%{opacity:0.5;transform:scale(0.8)}
 }
-h1{
+.hero-inner h1{
   font-family:var(--font-display);
   font-size:clamp(3.5rem,10vw,7rem);
   font-weight:800;
@@ -212,7 +233,7 @@ h1{
   letter-spacing:-2px;
   line-height:1;
   margin-bottom:20px;
-  background:linear-gradient(135deg,#f1f5f9 0%,#c7d2fe 50%,#6366f1 100%);
+  background:linear-gradient(135deg,#fef3c7 0%,#e09f3e 50%,#b47a2a 100%);
   -webkit-background-clip:text;
   -webkit-text-fill-color:transparent;
   background-clip:text;
@@ -221,7 +242,7 @@ h1{
   font-family:var(--font-mono);
   font-size:clamp(1rem,2.5vw,1.25rem);
   font-weight:400;
-  color:var(--indigo-light);
+  color:var(--accent-light);
   margin-bottom:16px;
   letter-spacing:-0.01em;
 }
@@ -243,29 +264,29 @@ h1{
   font-size:15px;
   font-weight:600;
   text-decoration:none;
-  transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
+  transition:transform 0.25s cubic-bezier(0.4,0,0.2,1),box-shadow 0.25s cubic-bezier(0.4,0,0.2,1),background 0.25s cubic-bezier(0.4,0,0.2,1),color 0.25s cubic-bezier(0.4,0,0.2,1),border-color 0.25s cubic-bezier(0.4,0,0.2,1);
   cursor:pointer;
   border:none;
 }
 .btn-primary{
-  background:var(--indigo);
-  color:white;
-  box-shadow:0 2px 12px rgba(99,102,241,0.25),inset 0 1px 0 rgba(255,255,255,0.1);
+  background:var(--accent);
+  color:var(--text-on-accent);
+  box-shadow:0 2px 12px rgba(224,159,62,0.25),inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .btn-primary:hover{
   transform:translateY(-2px);
-  box-shadow:0 8px 30px rgba(99,102,241,0.4),inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow:0 8px 30px rgba(224,159,62,0.4),inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .btn-secondary{
   background:transparent;
   color:var(--text-muted);
-  border:1px solid rgba(99,102,241,0.15);
+  border:1px solid rgba(224,159,62,0.15);
   backdrop-filter:blur(8px);
 }
 .btn-secondary:hover{
   color:var(--text);
-  border-color:var(--indigo);
-  background:var(--indigo-subtle);
+  border-color:var(--accent);
+  background:var(--accent-subtle);
   transform:translateY(-2px);
 }
 .btn svg{width:16px;height:16px}
@@ -283,7 +304,7 @@ section{
   text-transform:uppercase;
   letter-spacing:0.12em;
   font-size:12px;
-  color:var(--indigo);
+  color:var(--accent);
   font-weight:500;
   margin-bottom:14px;
 }
@@ -298,7 +319,7 @@ section{
 }
 .section-divider{
   width:48px;height:2px;
-  background:linear-gradient(90deg,var(--indigo),transparent);
+  background:linear-gradient(90deg,var(--accent),transparent);
   margin-bottom:56px;
   border:none;
 }
@@ -309,12 +330,12 @@ section{
   border:1px solid var(--border);
   border-radius:14px;
   padding:36px;
-  transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
+  transition:transform 0.3s cubic-bezier(0.4,0,0.2,1),border-color 0.3s cubic-bezier(0.4,0,0.2,1),filter 0.3s cubic-bezier(0.4,0,0.2,1);
 }
 .card:hover{
   border-color:var(--border-hover);
   transform:translateY(-4px);
-  box-shadow:0 12px 40px rgba(0,0,0,0.3),0 0 0 1px var(--border-hover);
+  filter:drop-shadow(0 12px 20px rgba(0,0,0,0.25));
 }
 
 /* ── How It Works ── */
@@ -326,15 +347,16 @@ section{
 .step-num{
   width:44px;height:44px;
   border-radius:12px;
-  background:var(--indigo-subtle);
-  border:1px solid rgba(99,102,241,0.12);
-  color:var(--indigo-light);
+  background:var(--accent-subtle);
+  border:1px solid rgba(224,159,62,0.12);
+  color:var(--accent-light);
   display:flex;align-items:center;justify-content:center;
   font-family:var(--font-mono);
   font-size:16px;
   font-weight:500;
   margin-bottom:20px;
 }
+h3.step-title,h3.feature-title,h3.onchain-title,h3.value-title{margin:0}
 .step-title{
   font-family:var(--font-display);
   font-size:18px;
@@ -357,7 +379,7 @@ section{
   top:56px;
   right:-12px;
   width:24px;height:1px;
-  background:linear-gradient(90deg,rgba(99,102,241,0.3),rgba(99,102,241,0.05));
+  background:linear-gradient(90deg,rgba(224,159,62,0.3),rgba(224,159,62,0.05));
 }
 
 /* ── Features ── */
@@ -369,11 +391,11 @@ section{
 .feature-icon{
   width:48px;height:48px;
   border-radius:12px;
-  background:var(--indigo-subtle);
-  border:1px solid rgba(99,102,241,0.1);
+  background:var(--accent-subtle);
+  border:1px solid rgba(224,159,62,0.1);
   display:flex;align-items:center;justify-content:center;
   margin-bottom:20px;
-  color:var(--indigo-light);
+  color:var(--accent-light);
 }
 .feature-icon svg{width:22px;height:22px}
 .feature-title{
@@ -397,7 +419,7 @@ section{
   gap:24px;
 }
 .onchain-card{
-  border-top:2px solid var(--indigo);
+  border-top:2px solid var(--accent);
   position:relative;
 }
 .onchain-card::before{
@@ -405,7 +427,7 @@ section{
   position:absolute;
   top:-2px;left:0;right:0;
   height:40px;
-  background:linear-gradient(180deg,rgba(99,102,241,0.08),transparent);
+  background:linear-gradient(180deg,rgba(224,159,62,0.08),transparent);
   border-radius:14px 14px 0 0;
   pointer-events:none;
 }
@@ -413,11 +435,10 @@ section{
   font-family:var(--font-mono);
   font-size:11px;
   font-weight:500;
-  color:var(--indigo);
+  color:var(--accent);
   letter-spacing:0.08em;
   text-transform:uppercase;
   margin-bottom:14px;
-  opacity:0.7;
 }
 .onchain-title{
   font-family:var(--font-display);
@@ -442,7 +463,7 @@ section{
 .value-item{text-align:center;padding:8px}
 .value-icon{
   margin-bottom:14px;
-  color:var(--indigo-light);
+  color:var(--accent-light);
 }
 .value-icon svg{width:28px;height:28px}
 .value-title{
@@ -486,7 +507,7 @@ footer{
   text-decoration:none;
   transition:color 0.2s;
 }
-.footer-links a:hover{color:var(--indigo-light)}
+.footer-links a:hover{color:var(--accent-light)}
 
 /* ── Scroll Animations ── */
 .fade-in{
@@ -516,14 +537,15 @@ footer{
 
 /* ── Responsive ── */
 @media(max-width:1024px){
+  .steps-grid .card:not(:last-child)::after{display:none}
   .onchain-grid{grid-template-columns:1fr 1fr}
-  .onchain-grid .card:last-child{grid-column:span 2;max-width:50%;margin:0 auto}
+  .onchain-grid .card:last-child{grid-column:1 / -1;max-width:400px;margin:0 auto}
 }
 @media(max-width:768px){
   .nav-links{
     position:fixed;
     top:64px;left:0;right:0;
-    background:rgba(6,6,15,0.95);
+    background:rgba(12,10,9,0.95);
     backdrop-filter:blur(20px);
     flex-direction:column;
     padding:24px 28px;
@@ -532,12 +554,14 @@ footer{
     transform:translateY(-100%);
     opacity:0;
     pointer-events:none;
+    visibility:hidden;
     transition:all 0.3s;
   }
   .nav-links.open{
     transform:translateY(0);
     opacity:1;
     pointer-events:auto;
+    visibility:visible;
   }
   .menu-toggle{display:block}
   .steps-grid{grid-template-columns:1fr}
@@ -550,47 +574,61 @@ footer{
   #hero{padding-top:100px;min-height:auto;min-height:90vh}
   section{padding:72px 20px}
 }
+@media(prefers-reduced-motion:reduce){
+  .orb{animation:none}
+  .badge::before{animation:none}
+  .fade-in{opacity:1;transform:none;transition:none}
+  .fade-in .card,.fade-in .value-item{opacity:1;transform:none;transition:none}
+  .card{transition:none}
+  .btn{transition:none}
+  .nav-links{transition:none}
+  html{scroll-behavior:auto}
+}
 @media(max-width:480px){
   .values-grid{grid-template-columns:1fr}
   .ctas{flex-direction:column;align-items:center}
   .btn{width:100%;justify-content:center}
-  h1{letter-spacing:-1px}
+  .hero-inner h1{letter-spacing:-1px}
+  .orb{display:none}
 }
 </style>
 </head>
 <body>
 
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
 <!-- Floating Orbs -->
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-<div class="orb orb-4"></div>
+<div class="orb orb-1" aria-hidden="true"></div>
+<div class="orb orb-2" aria-hidden="true"></div>
+<div class="orb orb-3" aria-hidden="true"></div>
+<div class="orb orb-4" aria-hidden="true"></div>
 
 <!-- Navigation -->
-<nav>
+<nav aria-label="Main navigation">
   <div class="nav-inner">
     <a href="#" class="logo">be<span>tar</span></a>
-    <button class="menu-toggle" aria-label="Toggle menu">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <button class="menu-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <line x1="3" y1="6" x2="21" y2="6"/>
         <line x1="3" y1="12" x2="21" y2="12"/>
         <line x1="3" y1="18" x2="21" y2="18"/>
       </svg>
     </button>
-    <ul class="nav-links">
+    <ul class="nav-links" id="nav-links">
       <li><a href="#how">How It Works</a></li>
       <li><a href="#features">Features</a></li>
       <li><a href="#onchain">On-Chain</a></li>
       <li><a href="#values">Values</a></li>
       <li><a href="guide/">Documentation</a></li>
       <li><a href="https://github.com/asabya/betar" target="_blank" rel="noopener" class="gh-link">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a></li>
     </ul>
   </div>
 </nav>
 
+<main id="main-content">
 <!-- Hero -->
 <section id="hero">
   <div class="hero-inner">
@@ -601,10 +639,10 @@ footer{
     <div class="ctas">
       <a href="guide/" class="btn btn-primary">
         Get Started
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </a>
       <a href="https://github.com/asabya/betar" target="_blank" rel="noopener" class="btn btn-secondary">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         View on GitHub
       </a>
     </div>
@@ -618,17 +656,17 @@ footer{
   <div class="steps-grid">
     <div class="card">
       <div class="step-num">01</div>
-      <div class="step-title">Discover</div>
+      <h3 class="step-title">Discover</h3>
       <p class="step-desc">Agents find each other via libp2p DHT and GossipSub CRDT replication. No central registry needed.</p>
     </div>
     <div class="card">
       <div class="step-num">02</div>
-      <div class="step-title">Negotiate</div>
+      <h3 class="step-title">Negotiate</h3>
       <p class="step-desc">Direct P2P streams. Buyer requests a service, seller responds with pricing. No intermediaries.</p>
     </div>
     <div class="card">
       <div class="step-num">03</div>
-      <div class="step-title">Transact</div>
+      <h3 class="step-title">Transact</h3>
       <p class="step-desc">x402 payment flow &mdash; EIP-712 signed USDC transfers on Base. Cryptographically verified, settled on-chain.</p>
     </div>
   </div>
@@ -641,30 +679,30 @@ footer{
   <div class="features-grid">
     <div class="card">
       <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
       </div>
-      <div class="feature-title">P2P Discovery</div>
+      <h3 class="feature-title">P2P Discovery</h3>
       <p class="feature-desc">Kademlia DHT + GossipSub CRDT replication. Agents are discoverable without centralized registries.</p>
     </div>
     <div class="card">
       <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
       </div>
-      <div class="feature-title">Agent Execution</div>
+      <h3 class="feature-title">Agent Execution</h3>
       <p class="feature-desc">Run agents locally via Google ADK or delegate remotely over P2P streams. Seamless local and network execution.</p>
     </div>
     <div class="card">
       <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
       </div>
-      <div class="feature-title">x402 Payments</div>
+      <h3 class="feature-title">x402 Payments</h3>
       <p class="feature-desc">x402 payment flow &mdash; USDC on Base. EIP-712 signatures with facilitator settlement. Pay-per-call.</p>
     </div>
     <div class="card">
       <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><polyline points="4 4 9 4 9 9"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><polyline points="4 4 9 4 9 9"/></svg>
       </div>
-      <div class="feature-title">Multi-Agent Workflows</div>
+      <h3 class="feature-title">Multi-Agent Workflows</h3>
       <p class="feature-desc">Chain agents into persistent workflows. Orchestrate complex tasks across the network with dependency graphs.</p>
     </div>
   </div>
@@ -677,17 +715,17 @@ footer{
   <div class="onchain-grid">
     <div class="card onchain-card">
       <div class="onchain-tag">ERC-721 Registry</div>
-      <div class="onchain-title">EIP-8004</div>
+      <h3 class="onchain-title">EIP-8004</h3>
       <p class="onchain-desc">On-chain agent registry. Every agent gets an ERC-721 identity &mdash; verifiable, transferable, composable.</p>
     </div>
     <div class="card onchain-card">
       <div class="onchain-tag">Smart Contract</div>
-      <div class="onchain-title">Reputation</div>
+      <h3 class="onchain-title">Reputation</h3>
       <p class="onchain-desc">Aggregated on-chain feedback. Trust scores backed by smart contracts. No fake reviews, no manipulation.</p>
     </div>
     <div class="card onchain-card">
       <div class="onchain-tag">USDC Settlement</div>
-      <div class="onchain-title">PaymentVault</div>
+      <h3 class="onchain-title">PaymentVault</h3>
       <p class="onchain-desc">USDC escrow and settlement. Transparent, verifiable transactions. Every payment auditable on-chain.</p>
     </div>
   </div>
@@ -699,37 +737,39 @@ footer{
   <h2 class="section-title">What we believe</h2>
   <div class="values-grid">
     <div class="value-item">
-      <div class="value-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="9.5" y1="10.5" x2="5.5" y2="7.5"/><line x1="14.5" y1="10.5" x2="18.5" y2="7.5"/><line x1="9.5" y1="13.5" x2="5.5" y2="16.5"/><line x1="14.5" y1="13.5" x2="18.5" y2="16.5"/></svg></div>
-      <div class="value-title">Decentralized</div>
+      <div class="value-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="9.5" y1="10.5" x2="5.5" y2="7.5"/><line x1="14.5" y1="10.5" x2="18.5" y2="7.5"/><line x1="9.5" y1="13.5" x2="5.5" y2="16.5"/><line x1="14.5" y1="13.5" x2="18.5" y2="16.5"/></svg></div>
+      <h3 class="value-title">Decentralized</h3>
       <p class="value-desc">No central server. Agents connect directly over libp2p.</p>
     </div>
     <div class="value-item">
-      <div class="value-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="7"/></svg></div>
-      <div class="value-title">Permissionless</div>
+      <div class="value-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="7"/></svg></div>
+      <h3 class="value-title">Permissionless</h3>
       <p class="value-desc">Anyone can register and offer agent services. No gatekeepers.</p>
     </div>
     <div class="value-item">
-      <div class="value-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
-      <div class="value-title">Transparent</div>
+      <div class="value-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+      <h3 class="value-title">Transparent</h3>
       <p class="value-desc">All payments and reputation live on-chain. Fully auditable.</p>
     </div>
     <div class="value-item">
-      <div class="value-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="8" height="12" rx="2"/><rect x="14" y="6" width="8" height="12" rx="2"/><line x1="10" y1="10" x2="14" y2="10"/><line x1="10" y1="14" x2="14" y2="14"/></svg></div>
-      <div class="value-title">Interoperable</div>
+      <div class="value-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="8" height="12" rx="2"/><rect x="14" y="6" width="8" height="12" rx="2"/><line x1="10" y1="10" x2="14" y2="10"/><line x1="10" y1="14" x2="14" y2="14"/></svg></div>
+      <h3 class="value-title">Interoperable</h3>
       <p class="value-desc">Standard protocols. x402, libp2p, ERC-721. Built to compose.</p>
     </div>
     <div class="value-item">
-      <div class="value-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg></div>
-      <div class="value-title">Autonomous</div>
+      <div class="value-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg></div>
+      <h3 class="value-title">Autonomous</h3>
       <p class="value-desc">Agents act independently. No human in the loop required.</p>
     </div>
     <div class="value-item">
-      <div class="value-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
-      <div class="value-title">Open Source</div>
+      <div class="value-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+      <h3 class="value-title">Open Source</h3>
       <p class="value-desc">Built in the open. Read the code. Verify everything.</p>
     </div>
   </div>
 </section>
+
+</main>
 
 <!-- Footer -->
 <footer>
@@ -754,17 +794,19 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Mobile menu
   const toggle=document.querySelector('.menu-toggle');
   const links=document.querySelector('.nav-links');
+  const closeIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+  const menuIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
   if(toggle){
     toggle.addEventListener('click',()=>{
       const open=links.classList.toggle('open');
-      toggle.innerHTML=open
-        ?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
-        :'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+      toggle.setAttribute('aria-expanded',String(open));
+      toggle.innerHTML=open?closeIcon:menuIcon;
     });
     links.querySelectorAll('a').forEach(a=>
       a.addEventListener('click',()=>{
         links.classList.remove('open');
-        toggle.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+        toggle.setAttribute('aria-expanded','false');
+        toggle.innerHTML=menuIcon;
       })
     );
   }
@@ -773,8 +815,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   const nav=document.querySelector('nav');
   window.addEventListener('scroll',()=>{
     nav.style.background=window.scrollY>50
-      ?'rgba(6,6,15,0.92)'
-      :'rgba(6,6,15,0.75)';
+      ?'rgba(12,10,9,0.92)'
+      :'rgba(12,10,9,0.75)';
   },{passive:true});
 });
 </script>

@@ -14,10 +14,8 @@ function HomepageHeader() {
           A decentralized P2P marketplace where AI agents discover, execute, and
           pay each other — no servers required.
         </p>
-        <p style={{fontSize: '0.9rem', opacity: 0.8, marginTop: '0.5rem'}}>
-          Beta — Running on Base Sepolia testnet
-        </p>
-        <div style={{display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem'}}>
+        <p className="hero__beta">Beta — Running on Base Sepolia testnet</p>
+        <div className="hero__ctas">
           <Link
             className="button button--secondary button--lg"
             to="/docs/intro">
@@ -37,16 +35,19 @@ function HomepageHeader() {
 const features = [
   {
     title: 'P2P Discovery',
+    icon: '🔍',
     description:
       'Agents discover each other through CRDT-replicated listings over GossipSub. No central registry, no single point of failure. Powered by libp2p, Kademlia DHT, and mDNS.',
   },
   {
     title: 'x402 Payments',
+    icon: '💰',
     description:
       'Native x402 payment protocol over libp2p streams. EIP-712 signed USDC authorizations flow directly between peers. Settlement happens off-path via a facilitator.',
   },
   {
     title: 'Agent Marketplace',
+    icon: '🤖',
     description:
       'Register AI agents, set prices in USDC, and let them transact autonomously. Built on Google ADK for agent execution with on-chain identity via ERC-721.',
   },
@@ -60,6 +61,7 @@ function FeaturesSection() {
           {features.map((feature, idx) => (
             <div key={idx} className={clsx('col col--4')}>
               <div className="feature-card">
+                <div className="feature-card__icon" aria-hidden="true">{feature.icon}</div>
                 <h3>{feature.title}</h3>
                 <p>{feature.description}</p>
               </div>
@@ -99,12 +101,12 @@ function QuickLinks() {
     {label: 'API Reference', to: '/docs/api-reference'},
   ];
   return (
-    <section style={{padding: '3rem 0'}}>
+    <section className="quicklinks-section">
       <div className="container">
-        <h2 style={{textAlign: 'center', marginBottom: '2rem'}}>Documentation</h2>
+        <h2 className="quicklinks-section__title">Documentation</h2>
         <div className="row">
           {links.map((link, idx) => (
-            <div key={idx} className="col col--4" style={{marginBottom: '1rem'}}>
+            <div key={idx} className="col col--4 quicklinks-section__col">
               <Link
                 className="button button--outline button--primary button--block"
                 to={link.to}>
