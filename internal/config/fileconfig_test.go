@@ -82,3 +82,46 @@ func TestSaveFileConfigPermissions(t *testing.T) {
 		t.Fatalf("expected 0600 permissions, got %o", perm)
 	}
 }
+
+func TestFileConfigAppliedByLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BETAR_DATA_DIR", dir)
+	t.Setenv("BETAR_P2P_KEY_PATH", filepath.Join(dir, "p2p.key"))
+	t.Setenv("BETAR_WALLET_KEY_PATH", filepath.Join(dir, "wallet.key"))
+	t.Setenv("GOOGLE_API_KEY", "")
+	t.Setenv("GOOGLE_MODEL", "")
+	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+
+	// Simulate what onboard writes
+	fc := &FileConfig{
+		LLM: LLMFileConfig{
+			Provider: "openai",
+			APIKey:   "sk-openai-test",
+			Model:    "gpt-4o",
+			BaseURL:  "http://localhost:11434/v1/",
+		},
+		P2P: P2PFileConfig{
+			Port: 5001,
+		},
+	}
+	if err := SaveFileConfig(FileConfigPath(dir), fc); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.Agent.Provider != "openai" {
+		t.Fatalf("expected provider 'openai', got %q", cfg.Agent.Provider)
+	}
+	if cfg.Agent.OpenAIAPIKey != "sk-openai-test" {
+		t.Fatalf("expected OpenAIAPIKey 'sk-openai-test', got %q", cfg.Agent.OpenAIAPIKey)
+	}
+	if cfg.Agent.OpenAIBaseURL != "http://localhost:11434/v1/" {
+		t.Fatalf("expected OpenAIBaseURL, got %q", cfg.Agent.OpenAIBaseURL)
+	}
+}
