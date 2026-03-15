@@ -129,7 +129,53 @@ func LoadConfig() (*Config, error) {
 	}
 	cfg.P2P.PrivKey = privKey
 
+	applyFileConfig(cfg)
+
 	return cfg, nil
+}
+
+func applyFileConfig(cfg *Config) {
+	fc, err := LoadFileConfig(FileConfigPath(cfg.Storage.DataDir))
+	if err != nil || fc == nil {
+		return
+	}
+
+	// LLM settings — only fill if env var didn't set them.
+	// Provider
+	if cfg.Agent.Provider == "" && fc.LLM.Provider != "" {
+		cfg.Agent.Provider = fc.LLM.Provider
+	}
+	// API key — route to correct field based on provider
+	provider := fc.LLM.Provider
+	if provider == "openai" {
+		if cfg.Agent.OpenAIAPIKey == "" && fc.LLM.APIKey != "" {
+			cfg.Agent.OpenAIAPIKey = fc.LLM.APIKey
+		}
+		if cfg.Agent.OpenAIBaseURL == "" && fc.LLM.BaseURL != "" {
+			cfg.Agent.OpenAIBaseURL = fc.LLM.BaseURL
+		}
+	} else {
+		if cfg.Agent.APIKey == "" && fc.LLM.APIKey != "" {
+			cfg.Agent.APIKey = fc.LLM.APIKey
+		}
+	}
+	// Model — only apply if env var GOOGLE_MODEL was not set
+	if os.Getenv("GOOGLE_MODEL") == "" && fc.LLM.Model != "" {
+		cfg.Agent.Model = fc.LLM.Model
+	}
+
+	// Wallet — only fill if env var didn't set it
+	if cfg.Ethereum.PrivateKey == "" && fc.Wallet.PrivateKey != "" {
+		cfg.Ethereum.PrivateKey = fc.Wallet.PrivateKey
+	}
+	if fc.Wallet.RPCURL != "" && os.Getenv("ETHEREUM_RPC_URL") == "" {
+		cfg.Ethereum.RPCURL = fc.Wallet.RPCURL
+	}
+
+	// P2P — bootstrap peers only (port is handled by CLI flags in initRuntime)
+	if len(cfg.P2P.BootstrapPeers) == 0 && len(fc.P2P.BootstrapPeers) > 0 {
+		cfg.P2P.BootstrapPeers = fc.P2P.BootstrapPeers
+	}
 }
 
 func defaultDataDir() string {
