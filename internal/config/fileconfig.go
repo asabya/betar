@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,9 +26,9 @@ type LLMFileConfig struct {
 }
 
 // WalletFileConfig holds Ethereum wallet settings.
+// Private keys are stored in wallet.key file, not in config.yaml.
 type WalletFileConfig struct {
-	PrivateKey string `yaml:"private_key,omitempty"` // empty = use wallet.key file
-	RPCURL     string `yaml:"rpc_url"`
+	RPCURL string `yaml:"rpc_url"`
 }
 
 // P2PFileConfig holds P2P network settings.
@@ -44,8 +45,9 @@ type AgentFileConfig struct {
 }
 
 // FileConfigPath returns the config.yaml path for the given data directory.
+// FileConfigPath returns the config.yaml path for the given data directory.
 func FileConfigPath(dataDir string) string {
-	return dataDir + "/config.yaml"
+	return filepath.Join(dataDir, "config.yaml")
 }
 
 // LoadFileConfig loads config from a YAML file.

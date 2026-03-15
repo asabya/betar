@@ -164,15 +164,15 @@ func applyFileConfig(cfg *Config) {
 		cfg.Agent.Model = fc.LLM.Model
 	}
 
-	// Wallet — only fill if env var didn't set it
-	if cfg.Ethereum.PrivateKey == "" && fc.Wallet.PrivateKey != "" {
-		cfg.Ethereum.PrivateKey = fc.Wallet.PrivateKey
-	}
+	// Wallet — RPC URL only (private key is managed via wallet.key file)
 	if fc.Wallet.RPCURL != "" && os.Getenv("ETHEREUM_RPC_URL") == "" {
 		cfg.Ethereum.RPCURL = fc.Wallet.RPCURL
 	}
 
-	// P2P — bootstrap peers only (port is handled by CLI flags in initRuntime)
+	// P2P
+	if fc.P2P.Port != 0 {
+		cfg.P2P.Port = fc.P2P.Port
+	}
 	if len(cfg.P2P.BootstrapPeers) == 0 && len(fc.P2P.BootstrapPeers) > 0 {
 		cfg.P2P.BootstrapPeers = fc.P2P.BootstrapPeers
 	}

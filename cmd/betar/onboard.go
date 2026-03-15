@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/asabya/betar/internal/config"
@@ -268,8 +269,10 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		if priceStr == "" {
 			priceStr = priceDefault
 		}
-		var price float64
-		fmt.Sscanf(priceStr, "%f", &price)
+		price, err := strconv.ParseFloat(priceStr, 64)
+		if err != nil {
+			return fmt.Errorf("invalid price %q: %w", priceStr, err)
+		}
 		fc.Agent.Price = price
 	}
 
@@ -296,8 +299,11 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 }
 
 func maskKey(key string) string {
+	if key == "" {
+		return ""
+	}
 	if len(key) <= 8 {
-		return key
+		return "****"
 	}
 	return key[:4] + "..." + key[len(key)-4:]
 }
