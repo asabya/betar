@@ -395,6 +395,7 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(orderCmd)
 	rootCmd.AddCommand(walletCmd)
+	rootCmd.AddCommand(onboardCmd)
 
 	agentCmd.AddCommand(agentRegisterCmd)
 	agentCmd.AddCommand(agentListCmd)
@@ -586,13 +587,23 @@ func initRuntime(cmd *cobra.Command) error {
 		return err
 	}
 
-	port, _ := cmd.Flags().GetInt("port")
-	bootstrap, _ := cmd.Flags().GetStringSlice("bootstrap")
-	modelName, _ := cmd.Flags().GetString("model")
+	// Hint to run onboard if no LLM key is configured
+	if cfg.Agent.APIKey == "" && cfg.Agent.OpenAIAPIKey == "" {
+		fmt.Println("Tip: Run 'betar onboard' to set up your LLM provider and agent.")
+	}
 
-	cfg.P2P.Port = port
-	cfg.P2P.BootstrapPeers = bootstrap
-	cfg.Agent.Model = modelName
+	if cmd.Flags().Changed("port") {
+		port, _ := cmd.Flags().GetInt("port")
+		cfg.P2P.Port = port
+	}
+	if cmd.Flags().Changed("bootstrap") {
+		bootstrap, _ := cmd.Flags().GetStringSlice("bootstrap")
+		cfg.P2P.BootstrapPeers = bootstrap
+	}
+	if cmd.Flags().Changed("model") {
+		modelName, _ := cmd.Flags().GetString("model")
+		cfg.Agent.Model = modelName
+	}
 
 	if provider := getOptionalFlag(cmd, "provider"); provider != "" {
 		cfg.Agent.Provider = provider
