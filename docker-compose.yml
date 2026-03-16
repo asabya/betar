@@ -1,0 +1,54 @@
+services:
+  seller:
+    build: .
+    container_name: betar-seller
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ETHEREUM_PRIVATE_KEY=${SELLER_PRIVATE_KEY}
+      - ETHEREUM_RPC_URL=https://sepolia.base.org
+      - BETAR_DATA_DIR=/data
+      - GOOGLE_MODEL=${GOOGLE_MODEL:-gemini-2.5-flash}
+    command:
+      - start
+      - --name=demo-agent
+      - --description=A demo agent that answers questions
+      - --price=0.001
+      - --port=4001
+    ports:
+      - "4001:4001"
+      - "8424:8424"
+    volumes:
+      - seller-data:/data
+    networks:
+      - betar
+
+  buyer:
+    build: .
+    container_name: betar-buyer
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ETHEREUM_PRIVATE_KEY=${BUYER_PRIVATE_KEY}
+      - ETHEREUM_RPC_URL=https://sepolia.base.org
+      - BETAR_DATA_DIR=/data
+      - GOOGLE_MODEL=${GOOGLE_MODEL:-gemini-2.5-flash}
+      - BOOTSTRAP_PEERS=/dns4/seller/tcp/4001
+    command:
+      - start
+      - --port=4002
+    ports:
+      - "4002:4001"
+      - "8425:8424"
+    volumes:
+      - buyer-data:/data
+    depends_on:
+      - seller
+    networks:
+      - betar
+
+volumes:
+  seller-data:
+  buyer-data:
+
+networks:
+  betar:
+    driver: bridge
