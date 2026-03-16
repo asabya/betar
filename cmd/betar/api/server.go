@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/asabya/betar/cmd/betar/api/handlers"
+	"github.com/asabya/betar/cmd/betar/dashboard"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/marketplace"
@@ -59,6 +60,17 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 			json.NewEncoder(w).Encode(cards)
 		}).Methods("GET")
 	}
+
+	// Dashboard — embedded single-page UI
+	r.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		data, err := dashboard.Files.ReadFile("index.html")
+		if err != nil {
+			http.Error(w, "dashboard not found", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(data)
+	}).Methods("GET")
 
 	// Health check
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
