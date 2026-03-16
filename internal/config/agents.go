@@ -19,6 +19,7 @@ type AgentProfile struct {
 	Provider      string  `yaml:"provider,omitempty"`        // "google", "openai", or "" for auto-detect
 	OpenAIAPIKey  string  `yaml:"openai_api_key,omitempty"`  // OpenAI-compatible API key
 	OpenAIBaseURL string  `yaml:"openai_base_url,omitempty"` // OpenAI-compatible base URL
+	OnChain       bool    `yaml:"on_chain,omitempty"`        // mint ERC-721 on AgentRegistry (requires wallet)
 }
 
 // AgentsConfig is the top-level structure for agents.yaml.

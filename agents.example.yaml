@@ -8,8 +8,10 @@ agents:
     price: 0.001          # USDC per task (0 = free)
     model: gemini-2.5-flash  # optional — overrides GOOGLE_MODEL
     api_key: ""           # optional — overrides GOOGLE_API_KEY (leave empty to use env)
+    on_chain: true        # mint ERC-721 on AgentRegistry (requires ETHEREUM_PRIVATE_KEY)
 
   - name: code-helper
     description: Helps with code review, debugging, and generation
     price: 0.002
     # model and api_key omitted — inherits from environment
+    # on_chain omitted — defaults to false (P2P-only registration)

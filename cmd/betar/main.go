@@ -939,6 +939,9 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Agent ID: %s\n", agent.AgentID)
 	fmt.Printf("Name: %s\n", agent.Name)
 	fmt.Printf("Price: %f ETH\n", agent.Price)
+	if agent.TokenID != nil {
+		fmt.Printf("On-Chain Token ID: %s\n", agent.TokenID.String())
+	}
 
 	return nil
 }
@@ -959,7 +962,11 @@ func listAgents(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Local Agents:")
 	for _, a := range agents {
-		fmt.Printf("  - %s (%s) - %f ETH\n", a.Name, a.ID, a.Price)
+		line := fmt.Sprintf("  - %s (%s) - %f ETH", a.Name, a.ID, a.Price)
+		if a.TokenID != nil {
+			line += fmt.Sprintf(" [tokenId: %s]", a.TokenID.String())
+		}
+		fmt.Println(line)
 	}
 
 	return nil
@@ -1071,6 +1078,7 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 			Model:         profile.Model,
 			APIKey:        profile.APIKey,
 			X402Support:   true,
+			OnChain:       profile.OnChain,
 			Services:      []types.Service{{Name: profile.Name, Version: "1.0.0"}},
 			Provider:      profile.Provider,
 			OpenAIAPIKey:  profile.OpenAIAPIKey,
