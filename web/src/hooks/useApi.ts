@@ -46,7 +46,7 @@ export function useSession(agentId: string | null, callerId: string | null) {
 }
 
 export function useWorkflows() {
-  return useQuery({ queryKey: ['workflows'], queryFn: api.getWorkflows, refetchInterval: 3000 });
+  return useQuery({ queryKey: ['workflows'], queryFn: api.getWorkflows, refetchInterval: 5000 });
 }
 
 export function useWorkflow(id: string | null) {
@@ -54,7 +54,7 @@ export function useWorkflow(id: string | null) {
     queryKey: ['workflow', id],
     queryFn: () => api.getWorkflow(id!),
     enabled: !!id,
-    refetchInterval: 3000,
+    refetchInterval: 5000,
   });
 }
 

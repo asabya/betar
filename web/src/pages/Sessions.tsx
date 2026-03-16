@@ -22,26 +22,26 @@ export function Sessions() {
           <button
             key={agent.id}
             onClick={() => { setSelectedAgent(agent.agentID); setSelectedCaller(null); }}
-            className={`px-4 py-2 rounded-lg text-sm transition-colors border ${
+            className={`px-4 py-2 rounded-xl text-sm transition-all border ${
               selectedAgent === agent.agentID
-                ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
-                : 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-primary)]'
+                ? 'bg-[var(--color-primary-subtle)] text-[var(--color-primary-light)] border-[var(--color-border-hover)]'
+                : 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-hover)]'
             }`}
           >
             {agent.name}
           </button>
         ))}
         {(!agents || agents.length === 0) && (
-          <p className="text-[var(--color-text-muted)] text-sm">No local agents. Register an agent first.</p>
+          <p className="text-[var(--color-text-dim)] text-sm">No local agents. Register an agent first.</p>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Session list */}
         {selectedAgent && (
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
+          <div className="glass-card p-5">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <MessageSquare size={18} /> Sessions
+              <MessageSquare size={18} className="text-[var(--color-primary)]" /> Sessions
             </h2>
             {sessionsError ? (
               <ErrorState message={sessionsError.message} onRetry={() => refetchSessions()} />
@@ -53,64 +53,64 @@ export function Sessions() {
                   <button
                     key={sess.id}
                     onClick={() => setSelectedCaller({ agentId: sess.agentId, callerId: sess.callerId })}
-                    className={`w-full text-left bg-[var(--color-bg)] rounded-lg px-4 py-3 hover:bg-[var(--color-surface-hover)] transition-colors flex items-center justify-between ${
-                      selectedCaller?.callerId === sess.callerId ? 'ring-1 ring-[var(--color-primary)]' : ''
+                    className={`w-full text-left bg-[var(--color-bg)] rounded-xl px-4 py-3 hover:bg-[var(--color-bg-elevated)] transition-colors flex items-center justify-between border ${
+                      selectedCaller?.callerId === sess.callerId ? 'border-[var(--color-border-hover)]' : 'border-[var(--color-border)]'
                     }`}
                   >
                     <div>
                       <p className="text-sm font-mono break-all">{sess.callerId}</p>
-                      <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                      <p className="text-xs text-[var(--color-text-dim)] mt-1">
                         {sess.exchanges?.length ?? 0} exchanges
                       </p>
                     </div>
-                    <ChevronRight size={16} className="text-[var(--color-text-muted)] shrink-0" />
+                    <ChevronRight size={16} className="text-[var(--color-text-dim)] shrink-0" />
                   </button>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-[var(--color-text-muted)]">No sessions for this agent</p>
+              <p className="text-sm text-[var(--color-text-dim)]">No sessions for this agent</p>
             )}
           </div>
         )}
 
         {/* Session detail */}
         {sessionDetail && (
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
+          <div className="glass-card p-5">
             <h2 className="text-lg font-semibold mb-4">Exchange History</h2>
             <div className="space-y-4">
               {sessionDetail.exchanges?.map((ex, i) => (
-                <div key={ex.requestId || i} className="bg-[var(--color-bg)] rounded-lg p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                <div key={ex.requestId || i} className="bg-[var(--color-bg)] rounded-xl p-4 space-y-2 border border-[var(--color-border)]">
+                  <div className="flex items-center gap-2 text-xs text-[var(--color-text-dim)]">
                     <Clock size={12} />
                     {formatTimestamp(ex.timestamp)}
                   </div>
                   <div>
                     <p className="text-xs text-[var(--color-info)] font-medium mb-1">Input</p>
-                    <p className="text-sm bg-[var(--color-surface)] rounded p-2">{ex.input}</p>
+                    <p className="text-sm bg-[var(--color-surface-solid)] rounded-lg p-2.5 border border-[var(--color-border)]">{ex.input}</p>
                   </div>
                   {ex.output && (
                     <div>
                       <p className="text-xs text-[var(--color-success)] font-medium mb-1">Output</p>
-                      <p className="text-sm bg-[var(--color-surface)] rounded p-2 whitespace-pre-wrap">{ex.output}</p>
+                      <p className="text-sm bg-[var(--color-surface-solid)] rounded-lg p-2.5 border border-[var(--color-border)] whitespace-pre-wrap">{ex.output}</p>
                     </div>
                   )}
                   {ex.error && (
                     <div>
                       <p className="text-xs text-[var(--color-error)] font-medium mb-1">Error</p>
-                      <p className="text-sm bg-[var(--color-surface)] rounded p-2 text-[var(--color-error)]">{ex.error}</p>
+                      <p className="text-sm bg-[var(--color-surface-solid)] rounded-lg p-2.5 border border-[var(--color-error)]/20 text-[var(--color-error)]">{ex.error}</p>
                     </div>
                   )}
                   {ex.payment && (
                     <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)] pt-2 border-t border-[var(--color-border)]">
-                      <CreditCard size={12} />
-                      <span>{ex.payment.amount} USDC</span>
-                      <span className="font-mono">{ex.payment.txHash.slice(0, 10)}...</span>
+                      <CreditCard size={12} className="text-[var(--color-primary)]" />
+                      <span className="text-[var(--color-primary)]">{ex.payment.amount} USDC</span>
+                      <span className="font-mono text-[var(--color-text-dim)]">{ex.payment.txHash.slice(0, 10)}...</span>
                     </div>
                   )}
                 </div>
               ))}
               {(!sessionDetail.exchanges || sessionDetail.exchanges.length === 0) && (
-                <p className="text-sm text-[var(--color-text-muted)]">No exchanges in this session</p>
+                <p className="text-sm text-[var(--color-text-dim)]">No exchanges in this session</p>
               )}
             </div>
           </div>

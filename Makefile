@@ -1,4 +1,4 @@
-.PHONY: help deps build run test fmt vet clean contracts-build contracts-deploy web-install web-dev web-build
+.PHONY: help deps build run test fmt vet clean contracts-build contracts-deploy web-install web-dev web-build dashboard-embed
 
 GO ?= go
 BINARY ?= betar
@@ -19,7 +19,7 @@ help:
 deps:
 	$(GO) mod download
 
-build:
+build: dashboard-embed
 	mkdir -p bin
 	$(GO) build -o bin/$(BINARY) $(CMD)
 
@@ -48,7 +48,11 @@ web-dev:
 	cd web && npm run dev
 
 web-build:
-	cd web && npm run build
+	cd web && VITE_API_URL='' npm run build
+
+dashboard-embed: web-build
+	rm -rf cmd/betar/dashboard/dist
+	cp -r web/dist cmd/betar/dashboard/dist
 
 clean:
 	rm -rf bin

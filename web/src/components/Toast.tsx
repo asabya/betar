@@ -36,7 +36,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+      <div
+        className="fixed bottom-20 lg:bottom-4 right-4 z-[60] flex flex-col gap-2 max-w-sm"
+        aria-live="polite"
+        aria-atomic="false"
+      >
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
         ))}
@@ -52,9 +56,15 @@ const icons: Record<ToastVariant, React.ElementType> = {
 };
 
 const colors: Record<ToastVariant, string> = {
-  success: 'border-green-500/30 bg-green-500/10 text-green-400',
-  error: 'border-red-500/30 bg-red-500/10 text-red-400',
-  info: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
+  success: 'border-[var(--color-success)]/20 bg-[var(--color-success)]/10 text-[var(--color-success)]',
+  error: 'border-[var(--color-error)]/20 bg-[var(--color-error)]/10 text-[var(--color-error)]',
+  info: 'border-[var(--color-border-hover)] bg-[var(--color-primary-subtle)] text-[var(--color-primary-light)]',
+};
+
+const roles: Record<ToastVariant, string> = {
+  success: 'status',
+  error: 'alert',
+  info: 'status',
 };
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
@@ -67,11 +77,16 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 
   return (
     <div
-      className={`flex items-start gap-3 px-4 py-3 rounded-lg border backdrop-blur-sm shadow-lg animate-in slide-in-from-right ${colors[toast.variant]}`}
+      role={roles[toast.variant]}
+      className={`flex items-start gap-3 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-lg ${colors[toast.variant]}`}
     >
-      <Icon size={18} className="shrink-0 mt-0.5" />
+      <Icon size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
       <p className="text-sm flex-1">{toast.message}</p>
-      <button onClick={onDismiss} className="shrink-0 opacity-60 hover:opacity-100">
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss notification"
+        className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+      >
         <X size={14} />
       </button>
     </div>
