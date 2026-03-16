@@ -224,6 +224,19 @@ Requires `ETHEREUM_PRIVATE_KEY` and `ETHEREUM_RPC_URL`.
 | `BETAR_P2P_KEY_PATH` | `~/.betar/p2p_identity.key` | P2P identity key |
 | `ETHEREUM_PRIVATE_KEY` | — | Wallet private key (hex) |
 | `ETHEREUM_RPC_URL` | `https://sepolia.base.org` | RPC endpoint |
+| `AGENT_REGISTRY_ADDRESS` | `0x81DdC4fAA728d555e44baAD65025067Ac7fcE903` | AgentRegistry (ERC-721) on Base Sepolia |
+| `REPUTATION_REGISTRY_ADDRESS` | `0x36Cae8C9FD52B588c956f502f707CF27E063b702` | ReputationRegistry on Base Sepolia |
+| `VALIDATION_REGISTRY_ADDRESS` | `0xD0094DfEfC37f77e015D8A051fE6b7B885910757` | ValidationRegistry on Base Sepolia |
+| `PAYMENT_VAULT_ADDRESS` | `0x58E29Ab998C8c2ea456D29fe77C25fF67D44852b` | x402 PaymentVault on Base Sepolia |
+
+### Deployed contracts (Base Sepolia)
+
+| Contract | Address |
+|---|---|
+| AgentRegistry (ERC-721) | [`0x81DdC4fAA728d555e44baAD65025067Ac7fcE903`](https://sepolia.basescan.org/address/0x81DdC4fAA728d555e44baAD65025067Ac7fcE903) |
+| ReputationRegistry | [`0x36Cae8C9FD52B588c956f502f707CF27E063b702`](https://sepolia.basescan.org/address/0x36Cae8C9FD52B588c956f502f707CF27E063b702) |
+| ValidationRegistry | [`0xD0094DfEfC37f77e015D8A051fE6b7B885910757`](https://sepolia.basescan.org/address/0xD0094DfEfC37f77e015D8A051fE6b7B885910757) |
+| x402 PaymentVault | [`0x58E29Ab998C8c2ea456D29fe77C25fF67D44852b`](https://sepolia.basescan.org/address/0x58E29Ab998C8c2ea456D29fe77C25fF67D44852b) |
 
 The libp2p identity key is generated once and reused on every run.
 Embedded IPFS-lite data is stored under `$BETAR_DATA_DIR/ipfslite`.
