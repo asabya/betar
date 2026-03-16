@@ -6,15 +6,41 @@
 >
 > Built for **PL Genesis: Frontiers of Collaboration** hackathon by Protocol Labs. Category: Existing Code. Tracks: Web3 + AI/AGI.
 
-**[Documentation](https://asabya.github.io/betar/guide/)** | **[Landing Page](https://asabya.github.io/betar/)**
+**[Documentation](https://asabya.github.io/betar/guide/)** | **[Landing Page](https://asabya.github.io/betar/)** | **[Demo](demo/README.md)** | **[Pitch](docs/pitch.md)**
 
-Betar is a decentralized P2P agent marketplace built with Go.
+Betar is the first fully decentralized P2P agent-to-agent marketplace built with Go. Autonomous AI agents discover each other, list services, and transact using [x402](https://x402.org) micropayments — all over [libp2p](https://libp2p.io) streams. No central servers. No brokers. Just peers paying peers.
 
 It combines:
-- `libp2p` for peer-to-peer networking and discovery
-- embedded IPFS-lite (`github.com/hsanjuan/ipfs-lite`) for metadata/content storage
-- Native `adk-go` runtime for agent execution
-- Marketplace CRDT state via `go-ds-crdt` and direct libp2p streams for A2A execution/orders
+- `libp2p` for peer-to-peer networking and discovery (TCP + QUIC, mDNS, Kademlia DHT)
+- `go-ds-crdt` + GossipSub for conflict-free replicated marketplace listings
+- `x402` payment protocol adapted for libp2p streams (inline payment-gated execution)
+- Embedded `IPFS-lite` for agent metadata storage
+- Native `adk-go` runtime for Google ADK / Gemini agent execution
+- `EIP-8004` on-chain agent identity via ERC-721 AgentRegistry on Base Sepolia
+
+## Architecture
+
+```
+  Buyer Node                             Seller Node
+  ──────────────────────────             ──────────────────────────
+  betar start --port 4002               betar start --port 4001
+       │                                      │
+       │  DHT bootstrap / mDNS discovery      │
+       │◄─────────────────────────────────────│
+       │                                      │
+       │  CRDT listing replication            │
+       │  (GossipSub: betar/marketplace/crdt) │
+       │◄─────────────────────────────────────│
+       │                                      │
+       │  /x402/libp2p/1.0.0 stream           │
+       │──── request ────────────────────────►│
+       │◄─── payment_required ───────────────│  (nonce, price, payTo)
+       │──── paid_request ───────────────────►│  (EIP-712 USDC sig)
+       │                                      │──► verify sig
+       │                                      │──► execute agent (ADK)
+       │                                      │──► settle (facilitator)
+       │◄─── response ───────────────────────│  (result + tx_hash)
+```
 
 ## What works now
 
@@ -30,7 +56,8 @@ It combines:
 ## Prerequisites
 
 - Go 1.25+
-- `GOOGLE_API_KEY` for ADK Gemini model access
+- `GOOGLE_API_KEY` for ADK Gemini model access (or `OPENAI_API_KEY` for OpenAI-compatible providers)
+- `ETHEREUM_PRIVATE_KEY` for wallet and payment functionality on Base Sepolia
 
 ## Build
 
@@ -40,6 +67,15 @@ make build
 ```
 
 Binary is created at `bin/betar`.
+
+## Run the Demo
+
+See **[demo/README.md](demo/README.md)** for a full step-by-step walkthrough of two nodes transacting with x402 payment.
+
+```bash
+# Automated setup for two local nodes
+cd demo && ./setup.sh
+```
 
 ## Quickstart: Run a P2P agent node
 
