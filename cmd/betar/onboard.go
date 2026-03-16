@@ -16,7 +16,7 @@ import (
 var onboardCmd = &cobra.Command{
 	Use:   "onboard",
 	Short: "Interactive setup wizard for Betar",
-	Long:  "Walk through LLM provider, wallet, and agent setup. Writes ~/.betar/config.yaml.",
+	Long:  "Walk through LLM provider, wallet, and agent setup. Writes config.yaml (network) and agents.yaml (agent profiles).",
 	RunE:  runOnboard,
 }
 
@@ -35,18 +35,29 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 	cfgPath := config.FileConfigPath(dataDir)
 
-	// Load existing config for pre-populating defaults on re-run
-	existing, _ := config.LoadFileConfig(cfgPath)
-	if existing == nil {
-		existing = &config.FileConfig{}
+	// Load existing configs for pre-populating defaults on re-run
+	existingFC, _ := config.LoadFileConfig(cfgPath)
+	if existingFC == nil {
+		existingFC = &config.FileConfig{}
+	}
+	existingAgents, _ := config.LoadAgentsConfig(dataDir)
+	if existingAgents == nil {
+		existingAgents = &config.AgentsConfig{}
 	}
 
-	fc := &config.FileConfig{}
+	// Collect LLM provider info (will be stored in agent profile, not config.yaml)
+	var provider, apiKey, baseURL, model string
 
 	// --- Step 1: LLM Provider ---
-	provider := existing.LLM.Provider
-	if provider == "" {
-		provider = "google"
+	// Pre-populate from first existing agent profile
+	var existingProfile *config.AgentProfile
+	if len(existingAgents.Agents) > 0 {
+		existingProfile = &existingAgents.Agents[0]
+	}
+
+	provider = "google"
+	if existingProfile != nil && existingProfile.Provider != "" {
+		provider = existingProfile.Provider
 	}
 	if err := huh.NewSelect[string]().
 		Title("Select your AI provider").
@@ -58,10 +69,15 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		Run(); err != nil {
 		return err
 	}
-	fc.LLM.Provider = provider
 
-	apiKeyDefault := existing.LLM.APIKey
-	var apiKey string
+	apiKeyDefault := ""
+	if existingProfile != nil {
+		if provider == "openai" {
+			apiKeyDefault = existingProfile.OpenAIAPIKey
+		} else {
+			apiKeyDefault = existingProfile.APIKey
+		}
+	}
 	if err := huh.NewInput().
 		Title("Enter your API key").
 		Value(&apiKey).
@@ -72,14 +88,12 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if apiKey == "" {
 		apiKey = apiKeyDefault
 	}
-	fc.LLM.APIKey = apiKey
 
 	if provider == "openai" {
-		baseURLDefault := existing.LLM.BaseURL
-		if baseURLDefault == "" {
-			baseURLDefault = "https://api.openai.com/v1/"
+		baseURLDefault := "https://api.openai.com/v1/"
+		if existingProfile != nil && existingProfile.OpenAIBaseURL != "" {
+			baseURLDefault = existingProfile.OpenAIBaseURL
 		}
-		var baseURL string
 		if err := huh.NewInput().
 			Title("Base URL").
 			Description("For Ollama use http://localhost:11434/v1/").
@@ -91,10 +105,12 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		if baseURL == "" {
 			baseURL = baseURLDefault
 		}
-		fc.LLM.BaseURL = baseURL
 	}
 
-	modelDefault := existing.LLM.Model
+	modelDefault := ""
+	if existingProfile != nil && existingProfile.Model != "" {
+		modelDefault = existingProfile.Model
+	}
 	if modelDefault == "" {
 		if provider == "google" {
 			modelDefault = "gemini-2.5-flash"
@@ -102,7 +118,6 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 			modelDefault = "gpt-4o"
 		}
 	}
-	var model string
 	if err := huh.NewInput().
 		Title("Model").
 		Value(&model).
@@ -113,7 +128,6 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if model == "" {
 		model = modelDefault
 	}
-	fc.LLM.Model = model
 
 	// --- Step 2: Wallet ---
 	walletKeyPath := filepath.Join(dataDir, "wallet.key")
@@ -194,7 +208,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		fmt.Println("Keeping existing wallet.")
 	}
 
-	rpcDefault := existing.Wallet.RPCURL
+	rpcDefault := existingFC.RPCUrl
 	if rpcDefault == "" {
 		rpcDefault = "https://sepolia.base.org"
 	}
@@ -209,7 +223,6 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if rpcURL == "" {
 		rpcURL = rpcDefault
 	}
-	fc.Wallet.RPCURL = rpcURL
 
 	// --- Step 3: Agent Profile ---
 	var setupAgent bool
@@ -223,9 +236,9 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	}
 
 	if setupAgent {
-		nameDefault := existing.Agent.Name
-		if nameDefault == "" {
-			nameDefault = "my-agent"
+		nameDefault := "my-agent"
+		if existingProfile != nil && existingProfile.Name != "" {
+			nameDefault = existingProfile.Name
 		}
 		var agentName string
 		if err := huh.NewInput().
@@ -238,25 +251,26 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		if agentName == "" {
 			agentName = nameDefault
 		}
-		fc.Agent.Name = agentName
 
+		descDefault := ""
+		if existingProfile != nil {
+			descDefault = existingProfile.Description
+		}
 		var agentDesc string
 		if err := huh.NewInput().
 			Title("Agent description").
 			Value(&agentDesc).
-			Placeholder(existing.Agent.Description).
+			Placeholder(descDefault).
 			Run(); err != nil {
 			return err
 		}
 		if agentDesc == "" {
-			agentDesc = existing.Agent.Description
+			agentDesc = descDefault
 		}
-		fc.Agent.Description = agentDesc
 
-		// Price — use string input, parse to float
 		priceDefault := "0"
-		if existing.Agent.Price > 0 {
-			priceDefault = fmt.Sprintf("%g", existing.Agent.Price)
+		if existingProfile != nil && existingProfile.Price > 0 {
+			priceDefault = fmt.Sprintf("%g", existingProfile.Price)
 		}
 		var priceStr string
 		if err := huh.NewInput().
@@ -273,17 +287,47 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid price %q: %w", priceStr, err)
 		}
-		fc.Agent.Price = price
+
+		// Build agent profile with provider info
+		profile := config.AgentProfile{
+			Name:        agentName,
+			Description: agentDesc,
+			Price:       price,
+			Provider:    provider,
+			Model:       model,
+		}
+		if provider == "openai" {
+			profile.OpenAIAPIKey = apiKey
+			profile.OpenAIBaseURL = baseURL
+		} else {
+			profile.APIKey = apiKey
+		}
+
+		// Upsert into agents.yaml — update existing or add new
+		if existing := existingAgents.FindProfile(agentName); existing != nil {
+			*existing = profile
+		} else {
+			if err := existingAgents.AddProfile(profile); err != nil {
+				return fmt.Errorf("failed to add agent profile: %w", err)
+			}
+		}
+
+		if err := config.SaveAgentsConfig(dataDir, existingAgents); err != nil {
+			return fmt.Errorf("failed to save agents config: %w", err)
+		}
+		fmt.Printf("Agent profile saved to %s\n", config.AgentsConfigPath(dataDir))
 	}
 
-	// P2P defaults
-	fc.P2P.Port = 4001
-	if existing.P2P.Port != 0 {
-		fc.P2P.Port = existing.P2P.Port
+	// --- Save flat config.yaml (network settings only) ---
+	fc := &config.FileConfig{
+		RPCUrl:         rpcURL,
+		P2PPort:        4001,
+		BootstrapPeers: existingFC.BootstrapPeers,
 	}
-	fc.P2P.BootstrapPeers = existing.P2P.BootstrapPeers
+	if existingFC.P2PPort != 0 {
+		fc.P2PPort = existingFC.P2PPort
+	}
 
-	// --- Save ---
 	if err := config.SaveFileConfig(cfgPath, fc); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}

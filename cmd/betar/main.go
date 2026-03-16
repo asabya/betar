@@ -522,20 +522,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Register agent from CLI flags if --name is set.
 	name, _ := cmd.Flags().GetString("name")
-	if name == "" {
-		fc, _ := config.LoadFileConfig(config.FileConfigPath(cfg.Storage.DataDir))
-		if fc != nil && fc.Agent.Name != "" {
-			name = fc.Agent.Name
-			// Also apply description and price if not set via flags
-			if desc, _ := cmd.Flags().GetString("description"); desc == "" {
-				cmd.Flags().Set("description", fc.Agent.Description)
-			}
-			if price, _ := cmd.Flags().GetFloat64("price"); price == 0 {
-				cmd.Flags().Set("price", fmt.Sprintf("%g", fc.Agent.Price))
-			}
-			cmd.Flags().Set("name", name)
-		}
-	}
 	if name != "" {
 		registered, listingMsg, err := registerLocalAgentFromFlags(ctx, cmd)
 		if err != nil {

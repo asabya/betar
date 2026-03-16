@@ -63,21 +63,12 @@ func TestLoadConfigFallsBackToFileConfig(t *testing.T) {
 	t.Setenv("BETAR_DATA_DIR", dir)
 	t.Setenv("BETAR_P2P_KEY_PATH", filepath.Join(dir, "p2p.key"))
 	t.Setenv("BETAR_WALLET_KEY_PATH", filepath.Join(dir, "wallet.key"))
-	// Clear env vars that would normally provide these
-	t.Setenv("GOOGLE_API_KEY", "")
-	t.Setenv("GOOGLE_MODEL", "")
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("ETHEREUM_RPC_URL", "")
 
-	// Write a config.yaml with LLM settings
+	// Write a flat config.yaml with network settings
 	fc := &FileConfig{
-		LLM: LLMFileConfig{
-			Provider: "google",
-			APIKey:   "from-config-yaml",
-			Model:    "gemini-2.0-flash",
-		},
-		Agent: AgentFileConfig{
-			Name: "yaml-agent",
-		},
+		RPCUrl:  "https://custom-rpc.example.com",
+		P2PPort: 5555,
 	}
 	if err := SaveFileConfig(FileConfigPath(dir), fc); err != nil {
 		t.Fatalf("save file config: %v", err)
@@ -88,11 +79,11 @@ func TestLoadConfigFallsBackToFileConfig(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	if cfg.Agent.APIKey != "from-config-yaml" {
-		t.Fatalf("expected APIKey 'from-config-yaml', got %q", cfg.Agent.APIKey)
+	if cfg.Ethereum.RPCURL != "https://custom-rpc.example.com" {
+		t.Fatalf("expected RPCURL 'https://custom-rpc.example.com', got %q", cfg.Ethereum.RPCURL)
 	}
-	if cfg.Agent.Model != "gemini-2.0-flash" {
-		t.Fatalf("expected Model 'gemini-2.0-flash', got %q", cfg.Agent.Model)
+	if cfg.P2P.Port != 5555 {
+		t.Fatalf("expected P2P port 5555, got %d", cfg.P2P.Port)
 	}
 }
 
@@ -101,16 +92,10 @@ func TestLoadConfigEnvOverridesFileConfig(t *testing.T) {
 	t.Setenv("BETAR_DATA_DIR", dir)
 	t.Setenv("BETAR_P2P_KEY_PATH", filepath.Join(dir, "p2p.key"))
 	t.Setenv("BETAR_WALLET_KEY_PATH", filepath.Join(dir, "wallet.key"))
-	t.Setenv("GOOGLE_API_KEY", "from-env")
-	t.Setenv("GOOGLE_MODEL", "")
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("ETHEREUM_RPC_URL", "https://from-env.example.com")
 
 	fc := &FileConfig{
-		LLM: LLMFileConfig{
-			Provider: "google",
-			APIKey:   "from-config-yaml",
-			Model:    "gemini-2.0-flash",
-		},
+		RPCUrl: "https://from-yaml.example.com",
 	}
 	if err := SaveFileConfig(FileConfigPath(dir), fc); err != nil {
 		t.Fatalf("save file config: %v", err)
@@ -122,11 +107,7 @@ func TestLoadConfigEnvOverridesFileConfig(t *testing.T) {
 	}
 
 	// Env var should win over config.yaml
-	if cfg.Agent.APIKey != "from-env" {
-		t.Fatalf("expected APIKey 'from-env' (env wins), got %q", cfg.Agent.APIKey)
-	}
-	// But model should come from config.yaml since env is empty
-	if cfg.Agent.Model != "gemini-2.0-flash" {
-		t.Fatalf("expected Model 'gemini-2.0-flash' (from yaml), got %q", cfg.Agent.Model)
+	if cfg.Ethereum.RPCURL != "https://from-env.example.com" {
+		t.Fatalf("expected RPCURL 'https://from-env.example.com' (env wins), got %q", cfg.Ethereum.RPCURL)
 	}
 }

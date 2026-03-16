@@ -143,41 +143,19 @@ func applyFileConfig(cfg *Config) {
 		return
 	}
 
-	// LLM settings — only fill if env var didn't set them.
-	// Provider
-	if cfg.Agent.Provider == "" && fc.LLM.Provider != "" {
-		cfg.Agent.Provider = fc.LLM.Provider
-	}
-	// API key — route to correct field based on provider
-	provider := fc.LLM.Provider
-	if provider == "openai" {
-		if cfg.Agent.OpenAIAPIKey == "" && fc.LLM.APIKey != "" {
-			cfg.Agent.OpenAIAPIKey = fc.LLM.APIKey
-		}
-		if cfg.Agent.OpenAIBaseURL == "" && fc.LLM.BaseURL != "" {
-			cfg.Agent.OpenAIBaseURL = fc.LLM.BaseURL
-		}
-	} else {
-		if cfg.Agent.APIKey == "" && fc.LLM.APIKey != "" {
-			cfg.Agent.APIKey = fc.LLM.APIKey
-		}
-	}
-	// Model — only apply if env var GOOGLE_MODEL was not set
-	if os.Getenv("GOOGLE_MODEL") == "" && fc.LLM.Model != "" {
-		cfg.Agent.Model = fc.LLM.Model
+	// RPC URL — only apply if env var ETHEREUM_RPC_URL was not set
+	if fc.RPCUrl != "" && os.Getenv("ETHEREUM_RPC_URL") == "" {
+		cfg.Ethereum.RPCURL = fc.RPCUrl
 	}
 
-	// Wallet — RPC URL only (private key is managed via wallet.key file)
-	if fc.Wallet.RPCURL != "" && os.Getenv("ETHEREUM_RPC_URL") == "" {
-		cfg.Ethereum.RPCURL = fc.Wallet.RPCURL
+	// P2P port
+	if fc.P2PPort != 0 {
+		cfg.P2P.Port = fc.P2PPort
 	}
 
-	// P2P
-	if fc.P2P.Port != 0 {
-		cfg.P2P.Port = fc.P2P.Port
-	}
-	if len(cfg.P2P.BootstrapPeers) == 0 && len(fc.P2P.BootstrapPeers) > 0 {
-		cfg.P2P.BootstrapPeers = fc.P2P.BootstrapPeers
+	// Bootstrap peers — only apply if env didn't set them
+	if len(cfg.P2P.BootstrapPeers) == 0 && len(fc.BootstrapPeers) > 0 {
+		cfg.P2P.BootstrapPeers = fc.BootstrapPeers
 	}
 }
 

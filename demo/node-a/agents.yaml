@@ -1,0 +1,5 @@
+agents:
+  - name: math-agent
+    description: "Performs arithmetic, algebra, and general math tasks"
+    price: 0.001
+    model: gemini-2.5-flash

@@ -10,38 +10,11 @@ import (
 )
 
 // FileConfig represents ~/.betar/config.yaml written by `betar onboard`.
+// It holds flat network settings only; agent profiles live in agents.yaml.
 type FileConfig struct {
-	LLM    LLMFileConfig    `yaml:"llm"`
-	Wallet WalletFileConfig `yaml:"wallet"`
-	P2P    P2PFileConfig    `yaml:"p2p"`
-	Agent  AgentFileConfig  `yaml:"agent"`
-}
-
-// LLMFileConfig holds LLM provider settings.
-type LLMFileConfig struct {
-	Provider string `yaml:"provider"` // "google" or "openai"
-	APIKey   string `yaml:"api_key"`
-	Model    string `yaml:"model"`
-	BaseURL  string `yaml:"base_url,omitempty"` // only for openai provider
-}
-
-// WalletFileConfig holds Ethereum wallet settings.
-// Private keys are stored in wallet.key file, not in config.yaml.
-type WalletFileConfig struct {
-	RPCURL string `yaml:"rpc_url"`
-}
-
-// P2PFileConfig holds P2P network settings.
-type P2PFileConfig struct {
-	Port           int      `yaml:"port"`
+	RPCUrl         string   `yaml:"rpc_url"`
+	P2PPort        int      `yaml:"p2p_port"`
 	BootstrapPeers []string `yaml:"bootstrap_peers,omitempty"`
-}
-
-// AgentFileConfig holds default agent profile settings.
-type AgentFileConfig struct {
-	Name        string  `yaml:"name"`
-	Description string  `yaml:"description"`
-	Price       float64 `yaml:"price"`
 }
 
 // FileConfigPath returns the config.yaml path for the given data directory.

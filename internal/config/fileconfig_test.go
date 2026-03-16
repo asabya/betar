@@ -12,22 +12,9 @@ func TestSaveAndLoadFileConfig(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	original := &FileConfig{
-		LLM: LLMFileConfig{
-			Provider: "google",
-			APIKey:   "test-key",
-			Model:    "gemini-2.5-flash",
-		},
-		Wallet: WalletFileConfig{
-			RPCURL: "https://sepolia.base.org",
-		},
-		P2P: P2PFileConfig{
-			Port: 4001,
-		},
-		Agent: AgentFileConfig{
-			Name:        "my-agent",
-			Description: "test agent",
-			Price:       0.001,
-		},
+		RPCUrl:         "https://sepolia.base.org",
+		P2PPort:        4001,
+		BootstrapPeers: []string{"/ip4/1.2.3.4/tcp/4001/p2p/Qm123"},
 	}
 
 	if err := SaveFileConfig(path, original); err != nil {
@@ -39,17 +26,14 @@ func TestSaveAndLoadFileConfig(t *testing.T) {
 		t.Fatalf("load failed: %v", err)
 	}
 
-	if loaded.LLM.Provider != "google" {
-		t.Fatalf("expected provider 'google', got %q", loaded.LLM.Provider)
+	if loaded.RPCUrl != "https://sepolia.base.org" {
+		t.Fatalf("expected rpc_url 'https://sepolia.base.org', got %q", loaded.RPCUrl)
 	}
-	if loaded.LLM.APIKey != "test-key" {
-		t.Fatalf("expected api_key 'test-key', got %q", loaded.LLM.APIKey)
+	if loaded.P2PPort != 4001 {
+		t.Fatalf("expected p2p_port 4001, got %d", loaded.P2PPort)
 	}
-	if loaded.Agent.Name != "my-agent" {
-		t.Fatalf("expected agent name 'my-agent', got %q", loaded.Agent.Name)
-	}
-	if loaded.Agent.Price != 0.001 {
-		t.Fatalf("expected price 0.001, got %f", loaded.Agent.Price)
+	if len(loaded.BootstrapPeers) != 1 {
+		t.Fatalf("expected 1 bootstrap peer, got %d", len(loaded.BootstrapPeers))
 	}
 }
 
@@ -62,8 +46,8 @@ func TestLoadFileConfigMissing(t *testing.T) {
 	if fc == nil {
 		t.Fatal("expected non-nil empty FileConfig")
 	}
-	if fc.LLM.Provider != "" {
-		t.Fatalf("expected empty provider, got %q", fc.LLM.Provider)
+	if fc.RPCUrl != "" {
+		t.Fatalf("expected empty rpc_url, got %q", fc.RPCUrl)
 	}
 }
 
@@ -88,23 +72,12 @@ func TestFileConfigAppliedByLoadConfig(t *testing.T) {
 	t.Setenv("BETAR_DATA_DIR", dir)
 	t.Setenv("BETAR_P2P_KEY_PATH", filepath.Join(dir, "p2p.key"))
 	t.Setenv("BETAR_WALLET_KEY_PATH", filepath.Join(dir, "wallet.key"))
-	t.Setenv("GOOGLE_API_KEY", "")
-	t.Setenv("GOOGLE_MODEL", "")
-	t.Setenv("LLM_PROVIDER", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("ETHEREUM_RPC_URL", "")
 
-	// Simulate what onboard writes
 	fc := &FileConfig{
-		LLM: LLMFileConfig{
-			Provider: "openai",
-			APIKey:   "sk-openai-test",
-			Model:    "gpt-4o",
-			BaseURL:  "http://localhost:11434/v1/",
-		},
-		P2P: P2PFileConfig{
-			Port: 5001,
-		},
+		RPCUrl:         "https://custom-rpc.example.com",
+		P2PPort:        5001,
+		BootstrapPeers: []string{"/ip4/1.2.3.4/tcp/4001/p2p/Qm123"},
 	}
 	if err := SaveFileConfig(FileConfigPath(dir), fc); err != nil {
 		t.Fatalf("save: %v", err)
@@ -115,13 +88,13 @@ func TestFileConfigAppliedByLoadConfig(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 
-	if cfg.Agent.Provider != "openai" {
-		t.Fatalf("expected provider 'openai', got %q", cfg.Agent.Provider)
+	if cfg.Ethereum.RPCURL != "https://custom-rpc.example.com" {
+		t.Fatalf("expected RPCURL 'https://custom-rpc.example.com', got %q", cfg.Ethereum.RPCURL)
 	}
-	if cfg.Agent.OpenAIAPIKey != "sk-openai-test" {
-		t.Fatalf("expected OpenAIAPIKey 'sk-openai-test', got %q", cfg.Agent.OpenAIAPIKey)
+	if cfg.P2P.Port != 5001 {
+		t.Fatalf("expected P2P port 5001, got %d", cfg.P2P.Port)
 	}
-	if cfg.Agent.OpenAIBaseURL != "http://localhost:11434/v1/" {
-		t.Fatalf("expected OpenAIBaseURL, got %q", cfg.Agent.OpenAIBaseURL)
+	if len(cfg.P2P.BootstrapPeers) != 1 {
+		t.Fatalf("expected 1 bootstrap peer, got %d", len(cfg.P2P.BootstrapPeers))
 	}
 }
