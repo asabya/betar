@@ -1,4 +1,4 @@
-.PHONY: help deps build run test fmt vet clean contracts-build web-install web-dev web-build
+.PHONY: help deps build run test fmt vet clean contracts-build contracts-deploy web-install web-dev web-build
 
 GO ?= go
 BINARY ?= betar
@@ -13,6 +13,7 @@ help:
 	@printf "  fmt             Format Go code\n"
 	@printf "  vet             Run go vet\n"
 	@printf "  contracts-build Build Solidity contracts with forge\n"
+	@printf "  contracts-deploy Deploy contracts to Base Sepolia (requires ETHEREUM_PRIVATE_KEY)\n"
 	@printf "  clean           Remove build artifacts\n"
 
 deps:
@@ -35,7 +36,10 @@ vet:
 	$(GO) vet ./...
 
 contracts-build:
-	forge build
+	cd contracts && forge build
+
+contracts-deploy:
+	cd contracts && forge script script/Deploy.s.sol --rpc-url https://sepolia.base.org --broadcast --verify
 
 web-install:
 	cd web && npm install

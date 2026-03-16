@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -77,7 +77,7 @@ contract ValidationRegistry is Ownable, ReentrancyGuard {
         require(validators[validator], "Not a validator");
 
         uint256 stake = validatorStake[validator];
-        validators[validator] = 0;
+        validators[validator] = false;
         validatorStake[validator] = 0;
 
         // Return stake (use call to prevent reentrancy)
