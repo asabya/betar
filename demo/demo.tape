@@ -63,19 +63,19 @@ Type "# Step 3 — Start SELLER node  (math-agent @ $0.001 / task)" Enter
 Sleep 500ms
 
 Hide
-Type "BETAR_DATA_DIR=./demo/node-a ETHEREUM_PRIVATE_KEY=$SELLER_KEY GOOGLE_API_KEY=$GOOGLE_API_KEY bin/betar start --port 4001 > /tmp/seller.log 2>&1 &" Enter
+Type "BETAR_DATA_DIR=./demo/node-a ETHEREUM_PRIVATE_KEY=$SELLER_KEY GOOGLE_API_KEY=$GOOGLE_API_KEY bin/betar start --port 4001 --api-port 8424 > /tmp/seller.log 2>&1 &" Enter
 Type "echo $! > /tmp/seller.pid" Enter
 Sleep 8s
-Type "grep -oP '(?<=PeerID: )\\S+' /tmp/seller.log | head -1 > /tmp/seller-peer-id.txt 2>/dev/null" Enter
-Type "grep -oP '/ip4/127.0.0.1/tcp/4001/p2p/\\S+' /tmp/seller.log | head -1 > /tmp/seller-multiaddr.txt 2>/dev/null" Enter
+Type "awk '/Peer ID:/ {print $NF; exit}' /tmp/seller.log > /tmp/seller-peer-id.txt" Enter
+Type "PEER_ID=$(cat /tmp/seller-peer-id.txt); echo \"/ip4/127.0.0.1/tcp/4001/p2p/$PEER_ID\" > /tmp/seller-multiaddr.txt" Enter
 Show
 
 Type "echo 'Seller node starting on port 4001...'" Enter
 Sleep 1s
-Type "cat /tmp/seller.log | grep -E 'Node started|PeerID|Agent registered|CRDT' | head -6" Enter
+Type "cat /tmp/seller.log | grep -E 'Peer ID|Agent registered|HTTP API|CRDT' | head -6" Enter
 Sleep 3s
 Type "echo ''" Enter
-Type "echo 'Seller PeerID:'" Enter
+Type "echo 'Seller Peer ID:'" Enter
 Type "cat /tmp/seller-peer-id.txt" Enter
 Sleep 2s
 
@@ -93,13 +93,13 @@ Type "cat /tmp/seller-multiaddr.txt" Enter
 Sleep 1s
 
 Hide
-Type "BETAR_DATA_DIR=./demo/node-b ETHEREUM_PRIVATE_KEY=$BUYER_KEY GOOGLE_API_KEY=$GOOGLE_API_KEY bin/betar start --port 4002 --bootstrap $(cat /tmp/seller-multiaddr.txt) > /tmp/buyer.log 2>&1 &" Enter
+Type "BETAR_DATA_DIR=./demo/node-b ETHEREUM_PRIVATE_KEY=$BUYER_KEY GOOGLE_API_KEY=$GOOGLE_API_KEY bin/betar start --port 4002 --api-port 8425 --bootstrap $(cat /tmp/seller-multiaddr.txt) > /tmp/buyer.log 2>&1 &" Enter
 Type "echo $! > /tmp/buyer.pid" Enter
 Sleep 6s
 Show
 
 Type "echo 'Buyer node log:'" Enter
-Type "cat /tmp/buyer.log | grep -E 'Node started|PeerID|Connected|peer' | head -4" Enter
+Type "cat /tmp/buyer.log | grep -E 'Peer ID|HTTP API|Connected|peer' | head -4" Enter
 Sleep 3s
 
 # ── 5. Discover agents ─────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ Sleep 1s
 Type "echo '  Every node has an eventually-consistent view — no registry server needed'" Enter
 Sleep 1s
 
-Type "BETAR_DATA_DIR=./demo/node-b bin/betar agent discover" Enter
+Type "bin/betar agent discover --api-url http://localhost:8425" Enter
 Sleep 5s
 
 # ── 6. Execute task with x402 payment ─────────────────────────────────────────
@@ -123,14 +123,14 @@ Hide
 Type "SELLER_PEER=$(cat /tmp/seller-peer-id.txt)" Enter
 Show
 
-Type "BETAR_DATA_DIR=./demo/node-b ETHEREUM_PRIVATE_KEY=$BUYER_KEY GOOGLE_API_KEY=$GOOGLE_API_KEY bin/betar agent execute --agent-id $(cat /tmp/seller-peer-id.txt) --task 'What is 847 multiplied by 239?'" Enter
+Type "bin/betar agent execute --api-url http://localhost:8425 --agent-id $(cat /tmp/seller-peer-id.txt) --task 'What is 847 multiplied by 239?'" Enter
 Sleep 12s
 
 # ── 7. Wallet balance (payment confirmed) ─────────────────────────────────────
 Type "echo ''" Enter
 Type "# Step 7 — Confirm payment received on seller wallet" Enter
 Sleep 500ms
-Type "BETAR_DATA_DIR=./demo/node-a ETHEREUM_PRIVATE_KEY=$SELLER_KEY bin/betar wallet balance" Enter
+Type "bin/betar wallet balance --api-url http://localhost:8424" Enter
 Sleep 4s
 
 # ── 8. Protocol summary ────────────────────────────────────────────────────────

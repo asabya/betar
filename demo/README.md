@@ -72,26 +72,33 @@ export BETAR_DATA_DIR=./demo/node-b
 export ETHEREUM_PRIVATE_KEY=<buyer-private-key>
 export GOOGLE_API_KEY=<your-google-api-key>
 
+# Construct seller multiaddr: /ip4/127.0.0.1/tcp/4001/p2p/<seller-peer-id>
+# (combine the address and Peer ID printed by Terminal A)
+SELLER_ADDR="/ip4/127.0.0.1/tcp/4001/p2p/<seller-peer-id>"
+
 # Start buyer node on port 4002, bootstrapping from seller
+# Use --api-port 8425 to avoid conflict with seller's API on 8424
 bin/betar start \
   --port 4002 \
-  --bootstrap <seller-multiaddr>
+  --api-port 8425 \
+  --bootstrap "$SELLER_ADDR"
 ```
 
 Wait until you see:
 ```
-✓ Node started | PeerID: 12D3Koo...
-✓ Connected to 1 peer(s)
+✓ Node started | Peer ID: 12D3Koo...
+✓ HTTP API server running on port 8425
 ```
 
 ---
 
 ### Discover Available Agents
 
-In Terminal B (or the TUI command input):
+In Terminal B (or a third terminal pointing at the buyer's API):
 
 ```bash
-bin/betar agent discover
+# Point to buyer node's API port
+bin/betar agent discover --api-url http://localhost:8425
 ```
 
 Expected output:
@@ -106,6 +113,7 @@ Found 1 agent(s):
 
 ```bash
 bin/betar agent execute \
+  --api-url http://localhost:8425 \
   --agent-id <seller-peer-id> \
   --task "What is 847 * 239?"
 ```
@@ -129,14 +137,14 @@ Expected output:
 
 ### Via HTTP API
 
-Both nodes expose a REST API on port 8424. Once nodes are running:
+Both nodes expose a REST API (seller on port 8424, buyer on port 8425). Once nodes are running:
 
 ```bash
-# List registered agents (seller node)
+# List all discovered agents (seller node API)
 curl http://localhost:8424/agents
 
 # Execute task via buyer node API
-curl -X POST http://localhost:8424/agents/<agent-id>/execute \
+curl -X POST http://localhost:8425/agents/<agent-id>/execute \
   -H "Content-Type: application/json" \
   -d '{"input": "What is the square root of 144?"}'
 ```
