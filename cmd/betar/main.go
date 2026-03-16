@@ -299,6 +299,7 @@ func init() {
 	agentServeCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
 	agentServeCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
 	agentServeCmd.Flags().Duration("announce-interval", 30*time.Second, "How often to republish agent CRDT listing")
+	agentServeCmd.Flags().Bool("on-chain", false, "Register agent on-chain via EIP-8004 (default off)")
 	_ = agentServeCmd.MarkFlagRequired("name")
 
 	// Unified start flags
@@ -313,18 +314,21 @@ func init() {
 	startCmd.Flags().String("provider", "", "LLM provider: google, openai, or empty for auto-detect")
 	startCmd.Flags().String("openai-api-key", "", "OpenAI-compatible API key (overrides OPENAI_API_KEY)")
 	startCmd.Flags().String("openai-base-url", "", "OpenAI-compatible base URL, e.g. http://localhost:11434/v1/")
+	startCmd.Flags().Bool("on-chain", false, "Register agent on-chain via EIP-8004 (default off)")
 	// --name is optional for startCmd; agents can be loaded from agents.yaml
 
 	// Agent register flags
 	agentRegisterCmd.Flags().StringP("name", "n", "", "Agent name")
 	agentRegisterCmd.Flags().StringP("description", "d", "", "Agent description")
 	agentRegisterCmd.Flags().Float64P("price", "p", 0, "Price per task")
+	agentRegisterCmd.Flags().Bool("on-chain", false, "Register agent on-chain via EIP-8004 (default off)")
 
 	// Agent list flags
 	agentListCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
 
 	// Agent discover flags
 	agentDiscoverCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
+	agentDiscoverCmd.Flags().Bool("on-chain", false, "Fetch on-chain reputation data for each discovered agent")
 
 	// Agent execute flags
 	agentExecuteCmd.Flags().String("api-url", "http://localhost:8424", "API server URL")
@@ -450,12 +454,14 @@ func serveAgent(cmd *cobra.Command, args []string) error {
 	price, _ := cmd.Flags().GetFloat64("price")
 	model, _ := cmd.Flags().GetString("model")
 
+	onChain, _ := cmd.Flags().GetBool("on-chain")
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:          name,
 		Description:   description,
 		Price:         price,
 		Model:         model,
 		X402Support:   true,
+		OnChain:       onChain,
 		Services:      []types.Service{{Name: name, Version: "1.0.0"}},
 		Provider:      getOptionalFlag(cmd, "provider"),
 		OpenAIAPIKey:  getOptionalFlag(cmd, "openai-api-key"),
@@ -776,6 +782,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
 	model, _ := cmd.Flags().GetString("model")
+	onChain, _ := cmd.Flags().GetBool("on-chain")
 
 	registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
 		Name:          name,
@@ -783,6 +790,7 @@ func registerLocalAgentFromFlags(ctx context.Context, cmd *cobra.Command) (*agen
 		Price:         price,
 		Model:         model,
 		X402Support:   true,
+		OnChain:       onChain,
 		Services:      []types.Service{{Name: name, Version: "1.0.0"}},
 		Provider:      getOptionalFlag(cmd, "provider"),
 		OpenAIAPIKey:  getOptionalFlag(cmd, "openai-api-key"),
@@ -911,12 +919,14 @@ func registerAgent(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
 	price, _ := cmd.Flags().GetFloat64("price")
+	onChain, _ := cmd.Flags().GetBool("on-chain")
 
 	spec := agent.AgentSpec{
 		Name:        name,
 		Description: description,
 		Price:       price,
 		X402Support: true,
+		OnChain:     onChain,
 		Services:    []types.Service{{Name: name, Version: "1.0.0"}},
 	}
 
@@ -957,10 +967,16 @@ func listAgents(cmd *cobra.Command, args []string) error {
 
 func discoverAgents(cmd *cobra.Command, args []string) error {
 	apiURL, _ := cmd.Flags().GetString("api-url")
+	onChain, _ := cmd.Flags().GetBool("on-chain")
 	client := api.NewClient(apiURL)
 
+	path := "/agents"
+	if onChain {
+		path = "/agents?on-chain=true"
+	}
+
 	var listings []*types.AgentListing
-	if err := client.Get("/agents", &listings); err != nil {
+	if err := client.Get(path, &listings); err != nil {
 		return err
 	}
 
@@ -971,7 +987,14 @@ func discoverAgents(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Discovered Agents:")
 	for _, l := range listings {
-		fmt.Printf("  - %s (%s) - %f ETH\n", l.Name, l.ID, l.Price)
+		line := fmt.Sprintf("  - %s (%s) - %f ETH", l.Name, l.ID, l.Price)
+		if l.TokenID != "" {
+			line += fmt.Sprintf(" [tokenId: %s]", l.TokenID)
+		}
+		if l.OnChainReputation != nil {
+			line += fmt.Sprintf(" [reputation: score=%d count=%d]", l.OnChainReputation.Score, l.OnChainReputation.Count)
+		}
+		fmt.Println(line)
 	}
 
 	return nil

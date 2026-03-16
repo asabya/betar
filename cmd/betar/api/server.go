@@ -27,7 +27,11 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	r := mux.NewRouter()
 
 	// Add handlers
-	handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
+	if len(eip8004Client) > 0 {
+		handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost, eip8004Client[0])
+	} else {
+		handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
+	}
 	handlers.RegisterWalletHandlers(r, paymentSvc)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
 	handlers.RegisterSessionHandlers(r, sessionStore)

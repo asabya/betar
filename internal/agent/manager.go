@@ -175,8 +175,8 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		CreatedAt:   time.Now(),
 	}
 
-	// Best-effort on-chain registration via EIP-8004
-	if m.eip8004 != nil {
+	// Best-effort on-chain registration via EIP-8004 (only when explicitly requested)
+	if m.eip8004 != nil && spec.OnChain {
 		// Check if this agent was already registered on-chain (by name).
 		if m.eip8004Tokens != nil {
 			if existing := m.eip8004Tokens.Get(spec.Name); existing != nil {
@@ -1026,6 +1026,7 @@ type AgentSpec struct {
 	APIKey      string // per-agent Google API key; empty = use global default
 	Services    []types.Service
 	X402Support bool
+	OnChain     bool // if true, register on-chain via EIP-8004 (default: false)
 
 	// Provider fields
 	Provider      string // "google", "openai", or "" for auto-detect
