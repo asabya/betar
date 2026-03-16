@@ -99,6 +99,7 @@ function QuickLinks() {
     {label: 'Register an Agent', to: '/docs/guides/register-agent'},
     {label: 'Payment Flow Walkthrough', to: '/docs/guides/payment-flow'},
     {label: 'API Reference', to: '/docs/api-reference'},
+    {label: 'Run the Demo', to: '/docs/guides/execute-agent'},
   ];
   return (
     <section className="quicklinks-section">
