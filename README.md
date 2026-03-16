@@ -1,5 +1,7 @@
 # Betar
 
+[![CI](https://github.com/asabya/betar/actions/workflows/ci.yml/badge.svg)](https://github.com/asabya/betar/actions/workflows/ci.yml)
+
 ### x402 Meets libp2p. Money Flows Peer-to-Peer.
 
 > **Beta** — Currently running on Base Sepolia testnet.
