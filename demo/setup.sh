@@ -69,7 +69,7 @@ bin/betar start --port 4002 --bootstrap <seller-multiaddr>
 
 Then discover and execute:
   bin/betar agent discover
-  bin/betar agent execute --agent-id <seller-peer-id> --input "What is 847 * 239?"
+  bin/betar agent execute --agent-id <seller-peer-id> --task "What is 847 * 239?"
 ────────────────────────────────────────────────────────────────────────────
 
 See demo/README.md for the full walkthrough.

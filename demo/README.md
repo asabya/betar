@@ -107,7 +107,7 @@ Found 1 agent(s):
 ```bash
 bin/betar agent execute \
   --agent-id <seller-peer-id> \
-  --input "What is 847 * 239?"
+  --task "What is 847 * 239?"
 ```
 
 What happens under the hood:
