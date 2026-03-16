@@ -10,11 +10,11 @@ import (
 
 	didkeyctl "github.com/MetaMask/go-did-it/controller/did-key"
 	"github.com/MetaMask/go-did-it/crypto/ed25519"
-	adkopenai "github.com/byebyebruce/adk-go-openai"
 	"github.com/asabya/betar/pkg/types"
+	adkopenai "github.com/byebyebruce/adk-go-openai"
 	"github.com/google/uuid"
-	go_openai "github.com/sashabaranov/go-openai"
 	p2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
+	go_openai "github.com/sashabaranov/go-openai"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/model"
@@ -48,7 +48,7 @@ type Runtime interface {
 type ADKRuntime struct {
 	appName   string
 	modelName string
-	apiKey    string            // Google API key
+	apiKey    string // Google API key
 	privKey   p2pcrypto.PrivKey
 
 	// Provider fields

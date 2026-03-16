@@ -168,7 +168,6 @@ type PaymentHeader struct {
 	Payload  *EVMPayload          `json:"payload,omitempty"`
 }
 
-
 // CreatePaymentRequirements creates a payment requirement from agent listing (x402 v2 format)
 func CreatePaymentRequirements(network, amount, asset, payTo string, timeout int64) PaymentRequirements {
 	return PaymentRequirements{

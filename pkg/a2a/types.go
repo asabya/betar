@@ -5,7 +5,7 @@ package a2a
 type AgentCard struct {
 	Name         string   `json:"name"`
 	Description  string   `json:"description,omitempty"`
-	URL          string   `json:"url"`                    // libp2p multiaddr
+	URL          string   `json:"url"` // libp2p multiaddr
 	Version      string   `json:"version,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
 	Skills       []Skill  `json:"skills,omitempty"`
@@ -45,6 +45,6 @@ type Artifact struct {
 
 // Part represents a single content element within an artifact.
 type Part struct {
-	Type    string `json:"type"`    // "text", "data", etc.
+	Type    string `json:"type"` // "text", "data", etc.
 	Content string `json:"content"`
 }
