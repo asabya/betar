@@ -24,6 +24,7 @@ type Discovery struct {
 	mdns      mdns.Service
 	rw        *routing.RoutingDiscovery
 	stopOnce  sync.Once
+	mu        sync.Mutex
 	stopFn    context.CancelFunc
 }
 
@@ -91,7 +92,9 @@ func (d *Discovery) DiscoverPeers(ctx context.Context, bootstrapPeers []string) 
 	// Advertise our presence on DHT
 	if d.dhtClient != nil {
 		advCtx, cancel := context.WithCancel(ctx)
+		d.mu.Lock()
 		d.stopFn = cancel
+		d.mu.Unlock()
 
 		go func() {
 			ticker := time.NewTicker(5 * time.Minute)
@@ -148,8 +151,11 @@ func (d *Discovery) Routing() corerouting.Routing {
 // Close closes the discovery service
 func (d *Discovery) Close() error {
 	d.stopOnce.Do(func() {
-		if d.stopFn != nil {
-			d.stopFn()
+		d.mu.Lock()
+		fn := d.stopFn
+		d.mu.Unlock()
+		if fn != nil {
+			fn()
 		}
 	})
 
