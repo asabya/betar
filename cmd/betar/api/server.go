@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"time"
 
 	"github.com/asabya/betar/cmd/betar/api/handlers"
+	"github.com/asabya/betar/cmd/betar/dashboard"
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/marketplace"
@@ -27,7 +29,11 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	r := mux.NewRouter()
 
 	// Add handlers
-	handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
+	if len(eip8004Client) > 0 {
+		handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost, eip8004Client[0])
+	} else {
+		handlers.RegisterAgentHandlers(r, agentMgr, listingSvc, p2pHost)
+	}
 	handlers.RegisterWalletHandlers(r, paymentSvc)
 	handlers.RegisterOrderHandlers(r, orderSvc, listingSvc)
 	handlers.RegisterSessionHandlers(r, sessionStore)
@@ -56,6 +62,11 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 		}).Methods("GET")
 	}
 
+	// Dashboard — embedded React SPA
+	distFS, _ := fs.Sub(dashboard.Files, "dist")
+	spaHandler := spaFileServer(distFS)
+	r.PathPrefix("/dashboard").Handler(http.StripPrefix("/dashboard", spaHandler))
+
 	// Health check
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -75,6 +86,33 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 		},
 		paymentService: paymentSvc,
 	}
+}
+
+// spaFileServer serves static files from the embedded FS and falls back to
+// index.html for any path that doesn't match a real file (SPA client-side routing).
+func spaFileServer(root fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(root))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try to open the requested file
+		path := r.URL.Path
+		if path == "/" || path == "" {
+			path = "index.html"
+		} else if path[0] == '/' {
+			path = path[1:]
+		}
+		if _, err := fs.Stat(root, path); err != nil {
+			// File not found — serve index.html for SPA routing
+			data, readErr := fs.ReadFile(root, "index.html")
+			if readErr != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write(data)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

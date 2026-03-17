@@ -41,13 +41,14 @@ type IPFSConfig struct {
 
 // EthereumConfig holds Ethereum configuration
 type EthereumConfig struct {
-	RPCURL         string
-	PrivateKey     string
-	ChainID        int64
-	RegistryAddr   string
-	IdentityAddr   string // ERC-8004 IdentityRegistry contract address
-	ReputationAddr string // ERC-8004 ReputationRegistry contract address
-	ValidationAddr string // ERC-8004 ValidationRegistry contract address
+	RPCURL           string
+	PrivateKey       string
+	ChainID          int64
+	RegistryAddr     string // AgentRegistry (ERC-721) contract address
+	PaymentVaultAddr string // x402 PaymentVault contract address
+	IdentityAddr     string // ERC-8004 IdentityRegistry contract address
+	ReputationAddr   string // ReputationRegistry contract address
+	ValidationAddr   string // ValidationRegistry contract address
 }
 
 // AgentConfig holds agent configuration
@@ -82,12 +83,14 @@ func LoadConfig() (*Config, error) {
 			APIURL: getEnv("IPFS_API_URL", "http://localhost:5001"),
 		},
 		Ethereum: &EthereumConfig{
-			RPCURL:         getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
-			PrivateKey:     getEnv("ETHEREUM_PRIVATE_KEY", ""),
-			ChainID:        84532, // Base Sepolia
-			IdentityAddr:   getEnv("ERC8004_IDENTITY_ADDR", "0x8004A818BFB912233c491871b3d84c89A494BD9e"),
-			ReputationAddr: getEnv("ERC8004_REPUTATION_ADDR", "0x8004B663056A597Dffe9eCcC1965A193B7388713"),
-			ValidationAddr: getEnv("ERC8004_VALIDATION_ADDR", ""),
+			RPCURL:           getEnv("ETHEREUM_RPC_URL", "https://sepolia.base.org"),
+			PrivateKey:       getEnv("ETHEREUM_PRIVATE_KEY", ""),
+			ChainID:          84532, // Base Sepolia
+			RegistryAddr:     getEnv("AGENT_REGISTRY_ADDRESS", "0x81DdC4fAA728d555e44baAD65025067Ac7fcE903"),
+			PaymentVaultAddr: getEnv("PAYMENT_VAULT_ADDRESS", "0x58E29Ab998C8c2ea456D29fe77C25fF67D44852b"),
+			IdentityAddr:     getEnv("ERC8004_IDENTITY_ADDR", "0x8004A818BFB912233c491871b3d84c89A494BD9e"),
+			ReputationAddr:   getEnv("REPUTATION_REGISTRY_ADDRESS", "0x36Cae8C9FD52B588c956f502f707CF27E063b702"),
+			ValidationAddr:   getEnv("VALIDATION_REGISTRY_ADDRESS", "0xD0094DfEfC37f77e015D8A051fE6b7B885910757"),
 		},
 		Agent: &AgentConfig{
 			Model:         getEnv("GOOGLE_MODEL", "gemini-2.5-flash"),
@@ -129,7 +132,31 @@ func LoadConfig() (*Config, error) {
 	}
 	cfg.P2P.PrivKey = privKey
 
+	applyFileConfig(cfg)
+
 	return cfg, nil
+}
+
+func applyFileConfig(cfg *Config) {
+	fc, err := LoadFileConfig(FileConfigPath(cfg.Storage.DataDir))
+	if err != nil || fc == nil {
+		return
+	}
+
+	// RPC URL — only apply if env var ETHEREUM_RPC_URL was not set
+	if fc.RPCUrl != "" && os.Getenv("ETHEREUM_RPC_URL") == "" {
+		cfg.Ethereum.RPCURL = fc.RPCUrl
+	}
+
+	// P2P port
+	if fc.P2PPort != 0 {
+		cfg.P2P.Port = fc.P2PPort
+	}
+
+	// Bootstrap peers — only apply if env didn't set them
+	if len(cfg.P2P.BootstrapPeers) == 0 && len(fc.BootstrapPeers) > 0 {
+		cfg.P2P.BootstrapPeers = fc.BootstrapPeers
+	}
 }
 
 func defaultDataDir() string {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
@@ -126,7 +126,7 @@ contract AgentRegistry is ERC721, ERC721URIStorage, ERC721Burnable, Ownable, Ree
      * @dev Get agent details
      */
     function getAgent(uint256 tokenId) public view returns (Agent memory) {
-        require(_exists(tokenId), "Agent does not exist");
+        _requireOwned(tokenId);
         return agents[tokenId];
     }
 
@@ -141,7 +141,7 @@ contract AgentRegistry is ERC721, ERC721URIStorage, ERC721Burnable, Ownable, Ree
      * @dev Check if agent supports X402 payments
      */
     function supportsX402(uint256 tokenId) public view returns (bool) {
-        require(_exists(tokenId), "Agent does not exist");
+        _requireOwned(tokenId);
         return agents[tokenId].x402Support;
     }
 
@@ -149,7 +149,7 @@ contract AgentRegistry is ERC721, ERC721URIStorage, ERC721Burnable, Ownable, Ree
      * @dev Check if agent is active
      */
     function isActive(uint256 tokenId) public view returns (bool) {
-        require(_exists(tokenId), "Agent does not exist");
+        _requireOwned(tokenId);
         return agents[tokenId].active;
     }
 

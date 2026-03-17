@@ -39,9 +39,9 @@ type model struct {
 	width  int
 	height int
 
-	peerID         string
-	addresses      []string
-	connectedPeers int
+	peerID           string
+	addresses        []string
+	connectedPeers   int
 	walletAddr       string
 	dataDir          string
 	agents           []agentInfo

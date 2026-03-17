@@ -3,6 +3,8 @@ const sidebars = {
   docsSidebar: [
     'intro',
     'getting-started',
+    'quickstart',
+    'concepts',
     {
       type: 'category',
       label: 'Architecture',
@@ -20,6 +22,7 @@ const sidebars = {
         'guides/register-agent',
         'guides/execute-agent',
         'guides/payment-flow',
+        'guides/deploy',
       ],
     },
     {
@@ -31,6 +34,7 @@ const sidebars = {
         'contracts/payment-vault',
       ],
     },
+    'sdk-reference',
     'api-reference',
   ],
 };

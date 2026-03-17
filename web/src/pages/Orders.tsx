@@ -7,10 +7,10 @@ import { Plus, ShoppingCart } from 'lucide-react';
 import { formatTimestamp } from '../utils/format';
 
 const statusColors: Record<string, string> = {
-  pending: 'bg-yellow-500/10 text-yellow-500',
-  accepted: 'bg-blue-500/10 text-blue-500',
-  completed: 'bg-green-500/10 text-green-500',
-  cancelled: 'bg-red-500/10 text-red-500',
+  pending: 'bg-[var(--color-primary-subtle)] text-[var(--color-primary)] border border-[var(--color-border)]',
+  accepted: 'bg-[var(--color-info)]/10 text-[var(--color-info)] border border-[var(--color-info)]/20',
+  completed: 'bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20',
+  cancelled: 'bg-[var(--color-error)]/10 text-[var(--color-error)] border border-[var(--color-error)]/20',
 };
 
 export function Orders() {
@@ -25,7 +25,7 @@ export function Orders() {
         <h1 className="text-2xl font-bold">Orders</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          className="flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-accent)] px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-[0_2px_12px_rgba(224,159,62,0.25)] hover:shadow-[0_4px_20px_rgba(224,159,62,0.35)] hover:-translate-y-px"
         >
           <Plus size={16} /> Create Order
         </button>
@@ -38,20 +38,20 @@ export function Orders() {
       ) : orders && orders.length > 0 ? (
         <div className="space-y-3">
           {orders.map((order) => (
-            <div key={order.orderId} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4">
+            <div key={order.orderId} className="glass-card p-4">
               <div className="flex items-start justify-between flex-wrap gap-2">
                 <div className="space-y-1">
                   <p className="font-mono text-sm">{order.orderId}</p>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    Agent: <span className="font-mono">{order.agentId}</span>
+                    Agent: <span className="font-mono text-[var(--color-text-dim)]">{order.agentId}</span>
                   </p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
+                  <p className="text-xs text-[var(--color-text-dim)]">
                     {formatTimestamp(order.timestamp)}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-[var(--color-primary)]">{order.price} USDC</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[order.status] || ''}`}>
+                  <span className="text-sm font-semibold text-[var(--color-primary)]">{order.price} USDC</span>
+                  <span className={`text-xs px-2.5 py-0.5 rounded-full ${statusColors[order.status] || ''}`}>
                     {order.status}
                   </span>
                 </div>
@@ -60,12 +60,12 @@ export function Orders() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
-          <ShoppingCart size={40} className="mx-auto mb-3 opacity-30" />
+        <div className="text-center py-12 text-[var(--color-text-muted)] glass-card">
+          <ShoppingCart size={40} className="mx-auto mb-3 opacity-20" />
           <p className="mb-3">No orders yet</p>
           <button
             onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+            className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-accent)] px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-[0_2px_12px_rgba(224,159,62,0.25)]"
           >
             <Plus size={16} /> Create your first order
           </button>
@@ -96,12 +96,13 @@ function CreateOrderForm({ agents, onSubmit, loading }: {
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(agentId, price); }} className="space-y-4">
       <div>
-        <label className="block text-sm text-[var(--color-text-muted)] mb-1">Agent</label>
+        <label htmlFor="order-agent" className="block text-sm text-[var(--color-text-muted)] mb-1.5">Agent</label>
         <select
+          id="order-agent"
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
           required
-          className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-primary)] transition-colors"
         >
           <option value="">Select agent...</option>
           {agents.map((a) => (
@@ -110,21 +111,22 @@ function CreateOrderForm({ agents, onSubmit, loading }: {
         </select>
       </div>
       <div>
-        <label className="block text-sm text-[var(--color-text-muted)] mb-1">Price (USDC)</label>
+        <label htmlFor="order-price" className="block text-sm text-[var(--color-text-muted)] mb-1.5">Price (USDC)</label>
         <input
+          id="order-price"
           type="number"
           step="0.01"
           min="0"
           value={price}
           onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
           required
-          className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-primary)] transition-colors"
         />
       </div>
       <button
         type="submit"
         disabled={loading || !agentId}
-        className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+        className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-[var(--color-text-on-accent)] px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-[0_2px_12px_rgba(224,159,62,0.25)]"
       >
         {loading ? 'Creating...' : 'Create Order'}
       </button>

@@ -1,0 +1,79 @@
+# docker-compose.yml — One-command local Betar marketplace with 2 nodes.
+#
+# Usage:
+#   cp .env.example .env   # fill in GOOGLE_API_KEY + wallet keys
+#   docker compose up --build
+#
+# The seller registers a math-agent ($0.001/task). The demo-runner service
+# waits for discovery, then executes a task on the buyer node via x402.
+
+services:
+  seller:
+    build: .
+    container_name: betar-seller
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    command: ["betar", "start", "--port=4001"]
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_MODEL=${GOOGLE_MODEL:-gemini-2.5-flash}
+      - ETHEREUM_PRIVATE_KEY=${SELLER_PRIVATE_KEY}
+      - ETHEREUM_RPC_URL=https://sepolia.base.org
+      - BETAR_DATA_DIR=/data
+      - NODE_ROLE=seller
+      - BETAR_PORT=4001
+    ports:
+      - "4001:4001"
+      - "8424:8424"
+    volumes:
+      - seller-data:/data
+      - shared:/shared
+      - ./docker/seller-agents.yaml:/data/agents.yaml:ro
+    networks:
+      - betar
+
+  buyer:
+    build: .
+    container_name: betar-buyer
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    command: ["betar", "start", "--port=4001"]
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_MODEL=${GOOGLE_MODEL:-gemini-2.5-flash}
+      - ETHEREUM_PRIVATE_KEY=${BUYER_PRIVATE_KEY}
+      - ETHEREUM_RPC_URL=https://sepolia.base.org
+      - BETAR_DATA_DIR=/data
+      - NODE_ROLE=buyer
+    ports:
+      - "4002:4001"
+      - "8425:8424"
+    volumes:
+      - buyer-data:/data
+      - shared:/shared
+    depends_on:
+      - seller
+    networks:
+      - betar
+
+  demo-runner:
+    image: alpine:3.20
+    container_name: betar-demo
+    entrypoint: ["/bin/sh", "/scripts/demo-runner.sh"]
+    environment:
+      - BUYER_API=http://buyer:8424
+      - DEMO_TASK=${DEMO_TASK:-What is 847 multiplied by 239?}
+    volumes:
+      - ./docker/demo-runner.sh:/scripts/demo-runner.sh:ro
+    depends_on:
+      - seller
+      - buyer
+    networks:
+      - betar
+
+volumes:
+  seller-data:
+  buyer-data:
+  shared:
+
+networks:
+  betar:
+    driver: bridge

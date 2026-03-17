@@ -22,17 +22,25 @@ type Service struct {
 	Version string `json:"version,omitempty"`
 }
 
+// OnChainReputation holds EIP-8004 reputation summary for an agent.
+type OnChainReputation struct {
+	Count    uint64 `json:"count"`
+	Score    int64  `json:"score"`
+	Decimals uint8  `json:"decimals"`
+}
+
 // AgentListing represents an agent listed on the marketplace (off-chain)
 type AgentListing struct {
-	ID        string   `json:"id"`                  // Marketplace agent ID (peerID/agentID)
-	Name      string   `json:"name"`                // Agent name
-	Price     float64  `json:"price"`               // Price per task in ETH
-	Metadata  string   `json:"metadata"`            // IPFS CID
-	SellerID  string   `json:"sellerId"`            // Seller's peer ID
-	Addrs     []string `json:"addrs,omitempty"`     // Multiaddrs to dial seller peer
-	Protocols []string `json:"protocols,omitempty"` // Supported app protocols
-	Timestamp int64    `json:"timestamp"`           // Unix timestamp
-	TokenID   string   `json:"tokenId,omitempty"`   // EIP-8004 on-chain token ID
+	ID                string             `json:"id"`                          // Marketplace agent ID (peerID/agentID)
+	Name              string             `json:"name"`                        // Agent name
+	Price             float64            `json:"price"`                       // Price per task in ETH
+	Metadata          string             `json:"metadata"`                    // IPFS CID
+	SellerID          string             `json:"sellerId"`                    // Seller's peer ID
+	Addrs             []string           `json:"addrs,omitempty"`             // Multiaddrs to dial seller peer
+	Protocols         []string           `json:"protocols,omitempty"`         // Supported app protocols
+	Timestamp         int64              `json:"timestamp"`                   // Unix timestamp
+	TokenID           string             `json:"tokenId,omitempty"`           // EIP-8004 on-chain token ID
+	OnChainReputation *OnChainReputation `json:"onChainReputation,omitempty"` // On-chain reputation (when available)
 }
 
 // Order represents a marketplace order

@@ -113,6 +113,8 @@ func (s *StreamHandler) handleStream(stream network.Stream) {
 	go func() {
 		defer stream.Close()
 
+		stream.SetDeadline(time.Now().Add(30 * time.Second))
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 

@@ -19,6 +19,55 @@ func testP2PConfig() *config.P2PConfig {
 	}
 }
 
+func TestMDNSPeerDiscovery(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	mdnsCfg := &config.P2PConfig{Port: 0, EnableMDNS: true, EnableDHT: false}
+
+	h1, err := NewHost(ctx, mdnsCfg)
+	if err != nil {
+		t.Fatalf("NewHost h1 failed: %v", err)
+	}
+	defer h1.Close()
+
+	h2, err := NewHost(ctx, mdnsCfg)
+	if err != nil {
+		t.Fatalf("NewHost h2 failed: %v", err)
+	}
+	defer h2.Close()
+
+	d1, err := NewDiscovery(ctx, h1.RawHost(), mdnsCfg)
+	if err != nil {
+		t.Fatalf("NewDiscovery h1 failed: %v", err)
+	}
+	defer d1.Close()
+
+	d2, err := NewDiscovery(ctx, h2.RawHost(), mdnsCfg)
+	if err != nil {
+		t.Fatalf("NewDiscovery h2 failed: %v", err)
+	}
+	defer d2.Close()
+
+	if err := d1.DiscoverPeers(ctx, nil); err != nil {
+		t.Fatalf("DiscoverPeers h1 failed: %v", err)
+	}
+	if err := d2.DiscoverPeers(ctx, nil); err != nil {
+		t.Fatalf("DiscoverPeers h2 failed: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if h1.RawHost().Network().Connectedness(h2.ID()) == network.Connected {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("mDNS: h1 did not discover h2 within 5s")
+}
+
 func TestHostConnect(t *testing.T) {
 	t.Parallel()
 

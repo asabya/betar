@@ -50,11 +50,11 @@ func TestX402StreamHandler_RequestResponse(t *testing.T) {
 		callCount++
 		if callCount == 1 {
 			resp := map[string]interface{}{
-				"version":        "1.0",
-				"correlation_id": "corr-1",
-				"challenge_nonce": "abc123",
+				"version":              "1.0",
+				"correlation_id":       "corr-1",
+				"challenge_nonce":      "abc123",
 				"challenge_expires_at": time.Now().Add(5 * time.Minute).Unix(),
-				"message":        "Payment required",
+				"message":              "Payment required",
 			}
 			b, _ := json.Marshal(resp)
 			return "x402.payment_required", b, nil
@@ -179,7 +179,10 @@ func newPipeConn() (*pipeReader, *pipeWriter) {
 	return &pipeReader{ch: ch}, &pipeWriter{ch: ch}
 }
 
-type pipeReader struct{ ch chan []byte; buf []byte }
+type pipeReader struct {
+	ch  chan []byte
+	buf []byte
+}
 type pipeWriter struct{ ch chan []byte }
 
 func (pw *pipeWriter) Write(p []byte) (int, error) {

@@ -1,20 +1,26 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http"
+	"time"
 
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/eip8004"
 	"github.com/asabya/betar/internal/marketplace"
 	"github.com/asabya/betar/internal/p2p"
+	"github.com/asabya/betar/pkg/types"
 	"github.com/gorilla/mux"
 )
 
-func RegisterAgentHandlers(r *mux.Router, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, p2pHost *p2p.Host) {
+func RegisterAgentHandlers(r *mux.Router, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, p2pHost *p2p.Host, eip8004Client ...*eip8004.Client) {
 	h := &agentHandler{agentMgr: agentMgr, listingSvc: listingSvc, p2pHost: p2pHost}
+	if len(eip8004Client) > 0 {
+		h.eip8004 = eip8004Client[0]
+	}
 
 	r.HandleFunc("/agents", h.listAgents).Methods("GET")
 	r.HandleFunc("/agents/local", h.listLocalAgents).Methods("GET")
@@ -26,6 +32,7 @@ type agentHandler struct {
 	agentMgr   *agent.Manager
 	listingSvc *marketplace.AgentListingService
 	p2pHost    *p2p.Host
+	eip8004    *eip8004.Client
 }
 
 func (h *agentHandler) listAgents(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +42,40 @@ func (h *agentHandler) listAgents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	listings := h.listingSvc.ListListings()
+
+	// Optionally enrich with on-chain reputation when ?on-chain=true is set.
+	if r.URL.Query().Get("on-chain") == "true" && h.eip8004 != nil {
+		enriched := make([]*types.AgentListing, len(listings))
+		copy(enriched, listings)
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i, l := range enriched {
+			if l.TokenID == "" {
+				continue
+			}
+			tokenID := new(big.Int)
+			if _, ok := tokenID.SetString(l.TokenID, 10); !ok {
+				continue
+			}
+			count, score, decimals, err := h.eip8004.GetReputationSummary(ctx, tokenID, "", "")
+			if err != nil {
+				continue
+			}
+			// Clone the listing to avoid mutating the CRDT copy.
+			copy := *l
+			copy.OnChainReputation = &types.OnChainReputation{
+				Count:    count,
+				Score:    score,
+				Decimals: decimals,
+			}
+			enriched[i] = &copy
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(enriched)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(listings)
 }
 

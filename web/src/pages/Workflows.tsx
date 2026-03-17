@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useWorkflows, useWorkflow, useCreateWorkflow, useCancelWorkflow, useAgents, useLocalAgents } from '../hooks/useApi';
 import { Modal } from '../components/Modal';
 import { ListSkeleton } from '../components/Skeleton';
@@ -7,11 +7,11 @@ import { Plus, X, ChevronRight, CheckCircle2, XCircle, Clock, Loader2, SkipForwa
 import { formatTimestamp } from '../utils/format';
 
 const statusColors: Record<string, string> = {
-  pending: 'text-[var(--color-text-muted)]',
-  running: 'text-[var(--color-warning)]',
+  pending: 'text-[var(--color-text-dim)]',
+  running: 'text-[var(--color-primary)]',
   completed: 'text-[var(--color-success)]',
   failed: 'text-[var(--color-error)]',
-  canceled: 'text-[var(--color-text-muted)]',
+  canceled: 'text-[var(--color-text-dim)]',
 };
 
 const stepIcons: Record<string, React.ElementType> = {
@@ -36,7 +36,7 @@ export function Workflows() {
         <h1 className="text-2xl font-bold">Workflows</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          className="flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-accent)] px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-[0_2px_12px_rgba(224,159,62,0.25)] hover:shadow-[0_4px_20px_rgba(224,159,62,0.35)] hover:-translate-y-px"
         >
           <Plus size={16} /> Create Workflow
         </button>
@@ -57,37 +57,37 @@ export function Workflows() {
                 <button
                   key={wf.id}
                   onClick={() => setSelectedId(wf.id)}
-                  className={`w-full text-left bg-[var(--color-surface)] border rounded-xl p-4 hover:bg-[var(--color-surface-hover)] transition-colors flex items-center justify-between ${
-                    selectedId === wf.id ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)]'
+                  className={`w-full text-left glass-card p-4 hover:border-[var(--color-border-hover)] transition-all flex items-center justify-between ${
+                    selectedId === wf.id ? 'border-[var(--color-border-hover)]' : ''
                   }`}
                 >
                   <div className="space-y-1 min-w-0">
                     <p className="font-mono text-sm truncate">{wf.id}</p>
                     <div className="flex items-center gap-3 text-xs">
                       <span className={statusColors[wf.status] || ''}>{wf.status}</span>
-                      <span className="text-[var(--color-text-muted)]">{completed}/{total} steps</span>
+                      <span className="text-[var(--color-text-dim)]">{completed}/{total} steps</span>
                       {wf.totalCost && wf.totalCost !== '0' && (
-                        <span className="text-[var(--color-text-muted)]">{wf.totalCost} USDC</span>
+                        <span className="text-[var(--color-primary)]">{wf.totalCost} USDC</span>
                       )}
                     </div>
-                    <div className="w-full bg-[var(--color-border)] rounded-full h-1 mt-2">
+                    <div className="w-full bg-[var(--color-bg-elevated)] rounded-full h-1 mt-2">
                       <div
                         className="bg-[var(--color-primary)] rounded-full h-1 transition-all"
                         style={{ width: total > 0 ? `${(completed / total) * 100}%` : '0%' }}
                       />
                     </div>
                   </div>
-                  <ChevronRight size={16} className="text-[var(--color-text-muted)] shrink-0 ml-3" />
+                  <ChevronRight size={16} className="text-[var(--color-text-dim)] shrink-0 ml-3" />
                 </button>
               );
             })
           ) : (
-            <div className="text-center py-12 text-[var(--color-text-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
-              <GitBranch size={40} className="mx-auto mb-3 opacity-30" />
+            <div className="text-center py-12 text-[var(--color-text-muted)] glass-card">
+              <GitBranch size={40} className="mx-auto mb-3 opacity-20" />
               <p className="mb-3">No workflows yet</p>
               <button
                 onClick={() => setShowCreate(true)}
-                className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm transition-colors"
+                className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-text-on-accent)] px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-[0_2px_12px_rgba(224,159,62,0.25)]"
               >
                 <Plus size={16} /> Create your first workflow
               </button>
@@ -97,14 +97,14 @@ export function Workflows() {
 
         {/* Workflow detail */}
         {detail && (
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-4">
+          <div className="glass-card p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Workflow Detail</h2>
               {detail.status === 'running' && (
                 <button
                   onClick={() => cancelMut.mutate(detail.id)}
                   disabled={cancelMut.isPending}
-                  className="flex items-center gap-1 text-xs text-[var(--color-error)] hover:bg-[var(--color-error)]/10 px-3 py-1.5 rounded-lg transition-colors"
+                  className="flex items-center gap-1 text-xs text-[var(--color-error)] hover:bg-[var(--color-error)]/10 px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-error)]/20"
                 >
                   <X size={14} /> Cancel
                 </button>
@@ -134,7 +134,7 @@ export function Workflows() {
                     </div>
                     <div className="pb-4 flex-1 min-w-0">
                       <p className="text-sm font-medium">Step {step.index + 1}</p>
-                      <p className="text-xs text-[var(--color-text-muted)] font-mono truncate">{step.agentId}</p>
+                      <p className="text-xs text-[var(--color-text-dim)] font-mono truncate">{step.agentId}</p>
                       {step.input && <p className="text-xs mt-1 text-[var(--color-text-muted)]">Input: {step.input.slice(0, 100)}{step.input.length > 100 ? '...' : ''}</p>}
                       {step.output && <p className="text-xs mt-1">Output: {step.output.slice(0, 200)}{step.output.length > 200 ? '...' : ''}</p>}
                       {step.error && <p className="text-xs mt-1 text-[var(--color-error)]">Error: {step.error}</p>}
@@ -166,10 +166,10 @@ function CreateWorkflowForm({ onSubmit, loading }: { onSubmit: (agentIds: string
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [input, setInput] = useState('');
 
-  const allAgents = [
+  const allAgents = useMemo(() => [
     ...(localAgents?.map((a) => ({ id: a.agentID, name: a.name })) ?? []),
     ...(networkAgents?.map((a) => ({ id: a.id, name: a.name })) ?? []),
-  ];
+  ], [localAgents, networkAgents]);
 
   const toggleAgent = (id: string) => {
     setSelectedAgents((prev) =>
@@ -186,13 +186,13 @@ function CreateWorkflowForm({ onSubmit, loading }: { onSubmit: (agentIds: string
             <button
               key={agent.id}
               onClick={() => toggleAgent(agent.id)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+              className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-all ${
                 selectedAgents.includes(agent.id)
-                  ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]'
-                  : 'bg-[var(--color-bg)] border border-[var(--color-border)] hover:border-[var(--color-primary)]'
+                  ? 'bg-[var(--color-primary-subtle)] text-[var(--color-primary)] border border-[var(--color-border-hover)]'
+                  : 'bg-[var(--color-bg)] border border-[var(--color-border)] hover:border-[var(--color-border-hover)]'
               }`}
             >
-              {selectedAgents.includes(agent.id) && <span className="mr-2">{selectedAgents.indexOf(agent.id) + 1}.</span>}
+              {selectedAgents.includes(agent.id) && <span className="mr-2 text-[var(--color-primary)]">{selectedAgents.indexOf(agent.id) + 1}.</span>}
               {agent.name}
             </button>
           ))}
@@ -205,13 +205,13 @@ function CreateWorkflowForm({ onSubmit, loading }: { onSubmit: (agentIds: string
           onChange={(e) => setInput(e.target.value)}
           rows={3}
           placeholder="Workflow input..."
-          className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-[var(--color-primary)] transition-colors"
         />
       </div>
       <button
         onClick={() => onSubmit(selectedAgents, input)}
         disabled={loading || selectedAgents.length === 0 || !input.trim()}
-        className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+        className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-[var(--color-text-on-accent)] px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-[0_2px_12px_rgba(224,159,62,0.25)]"
       >
         {loading ? 'Creating...' : 'Create Workflow'}
       </button>
