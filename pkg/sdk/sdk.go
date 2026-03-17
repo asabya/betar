@@ -16,8 +16,10 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
@@ -181,7 +183,36 @@ func (c *Client) Register(ctx context.Context, spec AgentSpec) (*agent.LocalAgen
 		return nil, fmt.Errorf("sdk: publish listing: %w", err)
 	}
 
+	// Also publish on the announce topic so peers discover the listing
+	// immediately (the CRDT sync is eventually-consistent, but the
+	// announce topic gives instant visibility).
+	if data, err := json.Marshal(msg); err == nil {
+		_ = c.pubsub.Publish(ctx, marketplace.AnnounceTopic, data)
+	}
+
+	// Start a background re-announcer so the listing stays visible.
+	go c.runAnnouncer(msg)
+
 	return la, nil
+}
+
+// runAnnouncer periodically re-publishes the listing on the announce topic.
+func (c *Client) runAnnouncer(msg *types.AgentListingMessage) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case t := <-ticker.C:
+			update := *msg
+			update.Type = "update"
+			update.Timestamp = t.Unix()
+			if data, err := json.Marshal(&update); err == nil {
+				_ = c.pubsub.Publish(c.ctx, marketplace.AnnounceTopic, data)
+			}
+		}
+	}
 }
 
 // Discover returns all agent listings known to this node. If query is
