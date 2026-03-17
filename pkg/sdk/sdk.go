@@ -261,6 +261,7 @@ func (c *Client) Serve(handler TaskHandler) {
 	c.serveMu.Lock()
 	c.serveHandler = handler
 	c.serveMu.Unlock()
+	c.manager.SetCustomHandler(handler)
 }
 
 // init performs the full node bootstrap sequence.

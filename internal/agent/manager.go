@@ -47,8 +47,9 @@ type Manager struct {
 	eip8004           *eip8004.Client
 	eip8004Tokens     *eip8004.TokenStore
 
-	mu          sync.RWMutex
-	localAgents map[string]*LocalAgent
+	mu            sync.RWMutex
+	localAgents   map[string]*LocalAgent
+	customHandler func(ctx context.Context, agentID, input string) (string, error)
 }
 
 // LocalAgent represents a local agent managed by this node
@@ -93,6 +94,14 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 	}
 
 	return m, nil
+}
+
+// SetCustomHandler registers a custom task handler that is used instead of the
+// ADK runtime for agents registered with CustomHandler: true.
+func (m *Manager) SetCustomHandler(h func(ctx context.Context, agentID, input string) (string, error)) {
+	m.mu.Lock()
+	m.customHandler = h
+	m.mu.Unlock()
 }
 
 // SetTokenStore sets the EIP-8004 token store for persisting on-chain tokenIDs.
@@ -241,7 +250,18 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID, input string) (strin
 		// Execute locally using the per-agent runtime.
 		m.mu.RLock()
 		rt, rtok := m.runtimes[agent.AgentID]
+		handler := m.customHandler
 		m.mu.RUnlock()
+
+		// If no runtime, try the custom handler (for CustomHandler agents).
+		if !rtok && handler != nil {
+			fmt.Printf("[ExecuteTask] No runtime, using custom handler for agent: %s\n", agent.AgentID)
+			output, err := handler(ctx, agent.AgentID, input)
+			if err != nil {
+				return "", fmt.Errorf("custom handler failed: %w", err)
+			}
+			return output, nil
+		}
 		if !rtok {
 			return "", fmt.Errorf("runtime not found for agent: %s", agent.AgentID)
 		}
