@@ -173,8 +173,13 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 	}
 
 	// Create local agent
+	agentID := m.p2pHost.ID().String() + "/" + runtimeAgentID
+	if spec.CustomHandler {
+		// DID is already globally unique — no peer ID prefix needed.
+		agentID = runtimeAgentID
+	}
 	agent := &LocalAgent{
-		ID:          m.p2pHost.ID().String() + "/" + runtimeAgentID,
+		ID:          agentID,
 		Name:        spec.Name,
 		Description: spec.Description,
 		Price:       spec.Price,
