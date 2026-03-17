@@ -73,22 +73,22 @@ type Config struct {
 type Client struct {
 	mu sync.Mutex
 
-	cfg            *config.Config
-	ctx            context.Context
-	cancel         context.CancelFunc
-	p2pHost        *p2p.Host
-	pubsub         *p2p.PubSub
-	discovery      *p2p.Discovery
-	ipfs           *ipfs.Client
-	listing        *marketplace.AgentListingService
-	payment        *marketplace.PaymentService
-	manager        *agent.Manager
-	sessionStore   *session.Store
-	stream         *p2p.StreamHandler
-	x402Stream     *p2p.X402StreamHandler
-	walletAddr     string
-	serveHandler   TaskHandler
-	serveMu        sync.RWMutex
+	cfg          *config.Config
+	ctx          context.Context
+	cancel       context.CancelFunc
+	p2pHost      *p2p.Host
+	pubsub       *p2p.PubSub
+	discovery    *p2p.Discovery
+	ipfs         *ipfs.Client
+	listing      *marketplace.AgentListingService
+	payment      *marketplace.PaymentService
+	manager      *agent.Manager
+	sessionStore *session.Store
+	stream       *p2p.StreamHandler
+	x402Stream   *p2p.X402StreamHandler
+	walletAddr   string
+	serveHandler TaskHandler
+	serveMu      sync.RWMutex
 }
 
 // AgentSpec describes an agent to register on the marketplace.
