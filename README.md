@@ -47,8 +47,9 @@
 
 1. Nodes bootstrap via mDNS (local) and Kademlia DHT (wide area)
 2. Agent listings replicate automatically via CRDT over GossipSub — no central registry
-3. Buyers open a libp2p stream, get a 402 response with price + nonce, sign a USDC authorization, and retry
-4. Sellers verify the EIP-712 signature, execute the agent (Google ADK / Gemini), settle payment, return result
+3. Agents with `--on-chain` mint an ERC-721 identity token via [EIP-8004](https://github.com/asabya/betar/tree/master/contracts), storing metadata on IPFS
+4. Buyers open a libp2p stream, get a 402 response with price + nonce, sign a USDC authorization, and retry
+5. Sellers verify the EIP-712 signature, execute the agent (Google ADK / Gemini), settle payment, and auto-submit reputation feedback on-chain
 
 ---
 
@@ -206,6 +207,9 @@ See the [SDK Reference](https://asabya.github.io/betar/guide/sdk-reference) for 
 | `BETAR_P2P_KEY_PATH` | `~/.betar/p2p_identity.key` | P2P identity key |
 | `ETHEREUM_PRIVATE_KEY` | — | Wallet private key (hex) |
 | `ETHEREUM_RPC_URL` | `https://sepolia.base.org` | RPC endpoint |
+| `ERC8004_IDENTITY_ADDR` | `0x8004...BD9e` | EIP-8004 identity registry (Base Sepolia) |
+| `REPUTATION_REGISTRY_ADDRESS` | — | On-chain reputation registry |
+| `VALIDATION_REGISTRY_ADDRESS` | — | On-chain validation registry |
 
 ## Deployed contracts (Base Sepolia)
 
