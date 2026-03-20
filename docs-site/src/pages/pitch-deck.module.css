@@ -1,0 +1,917 @@
+/* ── Pitch Deck ── */
+
+.deck {
+  scroll-snap-type: y mandatory;
+  overflow-y: scroll;
+  height: 100vh;
+  scroll-behavior: smooth;
+}
+
+/* ── Slide base ── */
+
+.slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4rem 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.slideInner {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ── Slide backgrounds ── */
+
+.slideDark {
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+.slideAlt {
+  background: #161b22;
+  color: #e6edf3;
+}
+
+.slideAccent {
+  background: linear-gradient(135deg, #1a1207 0%, #0d1117 60%);
+  color: #e6edf3;
+}
+
+/* ── Typography ── */
+
+.slideTitle {
+  font-size: 2.8rem;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.slideTitle span {
+  color: #e09f3e;
+}
+
+.slideSubtitle {
+  font-size: 1.3rem;
+  color: #8b949e;
+  margin-bottom: 2rem;
+  max-width: 700px;
+  line-height: 1.5;
+}
+
+.bigStatement {
+  font-size: 3.2rem;
+  font-weight: 800;
+  margin-bottom: 2rem;
+  line-height: 1.1;
+}
+
+.bigStatement span {
+  color: #e09f3e;
+}
+
+.slideLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #e09f3e;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+/* ── Title slide ── */
+
+.titleSlide {
+  text-align: center;
+  justify-content: center;
+}
+
+.titleSlide .slideTitle {
+  font-size: 3.6rem;
+}
+
+.tagline {
+  font-size: 1.5rem;
+  color: #8b949e;
+  margin-bottom: 1rem;
+  font-style: italic;
+}
+
+.titleBullets {
+  list-style: none;
+  padding: 0;
+  margin: 2rem auto 0;
+  max-width: 700px;
+}
+
+.titleBullets li {
+  font-size: 1.1rem;
+  color: #8b949e;
+  padding: 0.4rem 0;
+  line-height: 1.5;
+}
+
+.techTags {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 2.5rem;
+}
+
+.techTag {
+  padding: 0.4rem 1rem;
+  border-radius: 100px;
+  border: 1px solid #30363d;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e09f3e;
+  background: rgba(224, 159, 62, 0.08);
+}
+
+/* ── Problem slide ── */
+
+.challengeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.challengeCard {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #21262d;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.challengeCard h4 {
+  color: #e09f3e;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.challengeCard p {
+  color: #8b949e;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.closingPoint {
+  margin-top: 2rem;
+  font-size: 1.1rem;
+  color: #e6edf3;
+  font-weight: 600;
+}
+
+/* ── Flow diagram ── */
+
+.flowDiagram {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 2rem auto;
+  max-width: 700px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+}
+
+.flowRow {
+  display: grid;
+  grid-template-columns: 1fr 200px 1fr;
+  align-items: center;
+  padding: 0.6rem 0;
+}
+
+.flowLeft {
+  text-align: right;
+  color: #58a6ff;
+  font-weight: 600;
+}
+
+.flowRight {
+  text-align: left;
+  color: #f0883e;
+  font-weight: 600;
+}
+
+.flowArrow {
+  text-align: center;
+  color: #484f58;
+  position: relative;
+}
+
+.flowArrowRight {
+  composes: flowArrow;
+}
+
+.flowArrowRight::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: #30363d;
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  right: 10%;
+}
+
+.flowArrowLeft {
+  composes: flowArrow;
+}
+
+.flowArrowLeft::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: #30363d;
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  right: 10%;
+}
+
+.flowLabel {
+  position: relative;
+  z-index: 1;
+  background: #161b22;
+  padding: 0.2rem 0.5rem;
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #8b949e;
+}
+
+.flowHeader {
+  display: grid;
+  grid-template-columns: 1fr 200px 1fr;
+  padding: 0.8rem 0;
+  border-bottom: 2px solid #30363d;
+  margin-bottom: 0.5rem;
+}
+
+.flowHeaderLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+
+.flowStep {
+  display: grid;
+  grid-template-columns: 140px 1fr 140px;
+  align-items: center;
+  padding: 0.5rem 0;
+  gap: 0.5rem;
+}
+
+.flowStepBuyer {
+  text-align: right;
+  color: #58a6ff;
+  font-size: 0.8rem;
+}
+
+.flowStepCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.flowStepLine {
+  flex: 1;
+  height: 1px;
+  background: #30363d;
+}
+
+.flowStepLabel {
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: #8b949e;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #21262d;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.flowStepSeller {
+  text-align: left;
+  color: #f0883e;
+  font-size: 0.8rem;
+}
+
+/* ── Sequence diagram ── */
+
+.sequenceDiagram {
+  margin: 1.5rem auto;
+  max-width: 750px;
+  position: relative;
+}
+
+.seqActors {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.seqActor {
+  padding: 0.6rem 1.5rem;
+  border: 2px solid #e09f3e;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  background: rgba(224, 159, 62, 0.1);
+  color: #e09f3e;
+  text-align: center;
+  min-width: 140px;
+}
+
+.seqMessages {
+  position: relative;
+  padding: 0.5rem 0;
+}
+
+.seqMessages::before,
+.seqMessages::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #30363d 0px,
+    #30363d 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.seqMessages::before {
+  left: 70px;
+}
+
+.seqMessages::after {
+  right: 70px;
+}
+
+.seqMsg {
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0;
+  margin: 0.3rem 0;
+}
+
+.seqMsgRight {
+  composes: seqMsg;
+  padding-left: 85px;
+  padding-right: 85px;
+}
+
+.seqMsgLeft {
+  composes: seqMsg;
+  padding-left: 85px;
+  padding-right: 85px;
+  flex-direction: row-reverse;
+}
+
+.seqMsgLine {
+  flex: 1;
+  height: 0;
+  border-top: 2px solid #58a6ff;
+  position: relative;
+}
+
+.seqMsgLineReverse {
+  flex: 1;
+  height: 0;
+  border-top: 2px dashed #f0883e;
+  position: relative;
+}
+
+.seqMsgRight .seqMsgLine::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -6px;
+  border: 5px solid transparent;
+  border-left: 7px solid #58a6ff;
+}
+
+.seqMsgLeft .seqMsgLineReverse::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -6px;
+  border: 5px solid transparent;
+  border-right: 7px solid #f0883e;
+}
+
+.seqMsgText {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: #e6edf3;
+  background: #161b22;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+}
+
+.seqNote {
+  margin: 0.3rem 85px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(224, 159, 62, 0.08);
+  border-left: 3px solid #e09f3e;
+  font-size: 0.78rem;
+  color: #8b949e;
+  text-align: center;
+}
+
+/* ── Key points list ── */
+
+.keyPoints {
+  list-style: none;
+  padding: 0;
+  margin-top: 1.5rem;
+}
+
+.keyPoints li {
+  padding: 0.6rem 0;
+  padding-left: 1.5rem;
+  position: relative;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+}
+
+.keyPoints li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 1.05rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e09f3e;
+}
+
+/* ── Stack table ── */
+
+.stackTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.stackTable th {
+  text-align: left;
+  padding: 0.8rem 1rem;
+  border-bottom: 2px solid #30363d;
+  color: #e09f3e;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.stackTable td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #21262d;
+  vertical-align: top;
+}
+
+.stackTable tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.layerName {
+  font-weight: 700;
+  color: #e6edf3;
+}
+
+.layerDesc {
+  color: #8b949e;
+}
+
+.shipped {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.extensible {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+  border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+.notStarted {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(139, 148, 158, 0.15);
+  color: #8b949e;
+  border: 1px solid rgba(139, 148, 158, 0.3);
+}
+
+.proposed {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(139, 148, 158, 0.1);
+  color: #6e7681;
+  border: 1px solid rgba(139, 148, 158, 0.2);
+}
+
+/* ── Two-column comparison ── */
+
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.compCol {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #21262d;
+  border-radius: 12px;
+  padding: 2rem;
+}
+
+.compCol h3 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  color: #8b949e;
+}
+
+.compColHighlight {
+  composes: compCol;
+  border-color: #e09f3e;
+  background: rgba(224, 159, 62, 0.04);
+}
+
+.compColHighlight h3 {
+  color: #e09f3e;
+}
+
+.compCol ul {
+  list-style: none;
+  padding: 0;
+}
+
+.compCol li {
+  padding: 0.4rem 0;
+  font-size: 0.95rem;
+  color: #c9d1d9;
+  line-height: 1.4;
+}
+
+/* ── Extensibility cards ── */
+
+.extGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.extCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #21262d;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: border-color 0.2s;
+}
+
+.extCard:hover {
+  border-color: #e09f3e;
+}
+
+.extCard h4 {
+  color: #e09f3e;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.extCard p {
+  color: #8b949e;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Comparison table ── */
+
+.compTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.compTable th {
+  text-align: left;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 2px solid #30363d;
+  color: #e09f3e;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.compTable td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid #21262d;
+  vertical-align: middle;
+}
+
+.compTable tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── EIP-8004 flow ── */
+
+.eipFlow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.eipFlowBlock {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #21262d;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.eipFlowBlock h4 {
+  color: #e09f3e;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.eipSteps {
+  list-style: none;
+  padding: 0;
+  counter-reset: eip-step;
+}
+
+.eipSteps li {
+  counter-increment: eip-step;
+  padding: 0.4rem 0 0.4rem 2rem;
+  position: relative;
+  font-size: 0.9rem;
+  color: #c9d1d9;
+  line-height: 1.5;
+}
+
+.eipSteps li::before {
+  content: counter(eip-step);
+  position: absolute;
+  left: 0;
+  top: 0.4rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  background: rgba(224, 159, 62, 0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #e09f3e;
+}
+
+.eipSteps code {
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  color: #e09f3e;
+}
+
+/* ── Research points ── */
+
+.researchGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.researchCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #21262d;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.researchCard h4 {
+  color: #e09f3e;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.researchCard p {
+  color: #8b949e;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.closingStatement {
+  margin-top: 2.5rem;
+  padding: 2rem;
+  background: rgba(224, 159, 62, 0.06);
+  border: 1px solid rgba(224, 159, 62, 0.2);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.closingStatement p {
+  font-size: 1.1rem;
+  color: #e6edf3;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.closingStatement p + p {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  color: #8b949e;
+}
+
+/* ── Slide navigation ── */
+
+.slideNav {
+  position: fixed;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 100;
+}
+
+.slideNavDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #484f58;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.slideNavDot:hover {
+  border-color: #e09f3e;
+}
+
+.slideNavDotActive {
+  composes: slideNavDot;
+  background: #e09f3e;
+  border-color: #e09f3e;
+}
+
+/* ── Slide number ── */
+
+.slideNumber {
+  position: absolute;
+  bottom: 2rem;
+  right: 2rem;
+  font-size: 0.75rem;
+  color: #484f58;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* ── Technical details ── */
+
+.techDetails {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.techDetail {
+  padding: 0.8rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #21262d;
+  border-radius: 8px;
+}
+
+.techDetail .label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #484f58;
+  margin-bottom: 0.3rem;
+}
+
+.techDetail .value {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  color: #e09f3e;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 768px) {
+  .slide {
+    padding: 3rem 1.5rem;
+  }
+
+  .slideTitle {
+    font-size: 2rem;
+  }
+
+  .titleSlide .slideTitle {
+    font-size: 2.4rem;
+  }
+
+  .bigStatement {
+    font-size: 2.2rem;
+  }
+
+  .comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .eipFlow {
+    grid-template-columns: 1fr;
+  }
+
+  .researchGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .seqMessages::before {
+    left: 40px;
+  }
+
+  .seqMessages::after {
+    right: 40px;
+  }
+
+  .seqMsgRight,
+  .seqMsgLeft {
+    padding-left: 55px;
+    padding-right: 55px;
+  }
+
+  .seqMsg {
+    padding-left: 55px;
+    padding-right: 55px;
+  }
+
+  .seqNote {
+    margin: 0.3rem 55px;
+  }
+
+  .seqActor {
+    min-width: 80px;
+    font-size: 0.75rem;
+    padding: 0.4rem 0.8rem;
+  }
+
+  .slideNav {
+    display: none;
+  }
+
+  .compTable {
+    font-size: 0.75rem;
+  }
+
+  .compTable th,
+  .compTable td {
+    padding: 0.4rem;
+  }
+}
