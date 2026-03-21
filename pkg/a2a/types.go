@@ -7,15 +7,34 @@ type AgentCard struct {
 	Description  string   `json:"description,omitempty"`
 	URL          string   `json:"url"` // libp2p multiaddr
 	Version      string   `json:"version,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Skills       []Skill  `json:"skills,omitempty"`
+	ProtocolVersion string   `json:"protocolVersion,omitempty"`
+	PrefferedTransport string   `json:"preferredTransport,omitempty"`
+	Capabilities Capabilities `json:"capabilities"`
+	Skills       []Skill  `json:"skills"`
+	DefaultOutputModes []string `json:"defaultOutputModes,omitempty"`
+	DefaultInputModes []string `json:"defaultInputModes,omitempty"`
+}
+
+// Capabilities represents optional features an agent may support, such as streaming or specific protocol extensions.
+type Capabilities struct {
+	Streaming  bool        `json:"streaming"`
+	Extensions []Extension `json:"extensions,omitempty"`
+}
+
+// Extension represents a specific protocol extension an agent supports.
+type Extension struct {
+	URI         string `json:"uri"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required"`
 }
 
 // Skill represents a specific capability an agent advertises.
 type Skill struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Description string `json:"description"`
+	Examples    []string `json:"examples,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 // TaskState represents the A2A task lifecycle state.

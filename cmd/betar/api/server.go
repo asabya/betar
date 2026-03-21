@@ -48,17 +48,21 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	}
 
 	// A2A Agent Card discovery
+	// Agent card example
+	// {"capabilities":{"extensions":[{"description":"Supports payments using the x402 protocol.","required":true,"uri":"https://github.com/google-a2a/a2a-x402/v0.1"}],"streaming":false},"defaultInputModes":["text","text/plain"],"defaultOutputModes":["text","text/plain"],"description":"Fast code generation with Gemini 2.5 Flash Lite","name":"gemini_2_5_flash_lite","preferredTransport":"JSONRPC","protocolVersion":"0.3.0","skills":[{"description":"Generates code based on user input.","examples":["Can you write a Python function to add two numbers?","Generate a SQL query to find all users with a specific email."],"id":"generate_code","name":"Generate Code and code completion","tags":["coding","generation","x402"]}],"url":"http://localhost:10000/agents/gemini-2.5-flash-lite","version":"0.0.1"}
 	if listingSvc != nil {
-		r.HandleFunc("/.well-known/agent.json", func(w http.ResponseWriter, r *http.Request) {
+		r.HandleFunc("/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
 			listings := listingSvc.ListListings()
-			var cards []*a2a.AgentCard
-			for _, l := range listings {
-				if l != nil {
-					cards = append(cards, a2a.AgentListingToAgentCard(l))
-				}
-			}
+			var listing = listings[0] // For simplicity, we take the first listing. In a real implementation, you might want to support multiple cards or have a more sophisticated selection mechanism.
+			var card *a2a.AgentCard
+			// for _, l := range listings {
+			// 	if l != nil {
+			// 		cards = append(cards, a2a.AgentListingToAgentCard(l))
+			// 	}
+			// }
+			card = a2a.AgentListingToAgentCard(listing)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(cards)
+			json.NewEncoder(w).Encode(card)
 		}).Methods("GET")
 	}
 
