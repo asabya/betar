@@ -27,6 +27,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Install web dependencies
+        run: cd web && npm ci
+
       - name: Build dashboard
         run: make dashboard-embed
 
