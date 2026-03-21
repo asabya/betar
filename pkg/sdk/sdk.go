@@ -16,8 +16,10 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/asabya/betar/internal/agent"
 	"github.com/asabya/betar/internal/config"
@@ -73,22 +75,22 @@ type Config struct {
 type Client struct {
 	mu sync.Mutex
 
-	cfg            *config.Config
-	ctx            context.Context
-	cancel         context.CancelFunc
-	p2pHost        *p2p.Host
-	pubsub         *p2p.PubSub
-	discovery      *p2p.Discovery
-	ipfs           *ipfs.Client
-	listing        *marketplace.AgentListingService
-	payment        *marketplace.PaymentService
-	manager        *agent.Manager
-	sessionStore   *session.Store
-	stream         *p2p.StreamHandler
-	x402Stream     *p2p.X402StreamHandler
-	walletAddr     string
-	serveHandler   TaskHandler
-	serveMu        sync.RWMutex
+	cfg          *config.Config
+	ctx          context.Context
+	cancel       context.CancelFunc
+	p2pHost      *p2p.Host
+	pubsub       *p2p.PubSub
+	discovery    *p2p.Discovery
+	ipfs         *ipfs.Client
+	listing      *marketplace.AgentListingService
+	payment      *marketplace.PaymentService
+	manager      *agent.Manager
+	sessionStore *session.Store
+	stream       *p2p.StreamHandler
+	x402Stream   *p2p.X402StreamHandler
+	walletAddr   string
+	serveHandler TaskHandler
+	serveMu      sync.RWMutex
 }
 
 // AgentSpec describes an agent to register on the marketplace.
@@ -181,7 +183,36 @@ func (c *Client) Register(ctx context.Context, spec AgentSpec) (*agent.LocalAgen
 		return nil, fmt.Errorf("sdk: publish listing: %w", err)
 	}
 
+	// Also publish on the announce topic so peers discover the listing
+	// immediately (the CRDT sync is eventually-consistent, but the
+	// announce topic gives instant visibility).
+	if data, err := json.Marshal(msg); err == nil {
+		_ = c.pubsub.Publish(ctx, marketplace.AnnounceTopic, data)
+	}
+
+	// Start a background re-announcer so the listing stays visible.
+	go c.runAnnouncer(msg)
+
 	return la, nil
+}
+
+// runAnnouncer periodically re-publishes the listing on the announce topic.
+func (c *Client) runAnnouncer(msg *types.AgentListingMessage) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case t := <-ticker.C:
+			update := *msg
+			update.Type = "update"
+			update.Timestamp = t.Unix()
+			if data, err := json.Marshal(&update); err == nil {
+				_ = c.pubsub.Publish(c.ctx, marketplace.AnnounceTopic, data)
+			}
+		}
+	}
 }
 
 // Discover returns all agent listings known to this node. If query is
@@ -230,6 +261,7 @@ func (c *Client) Serve(handler TaskHandler) {
 	c.serveMu.Lock()
 	c.serveHandler = handler
 	c.serveMu.Unlock()
+	c.manager.SetCustomHandler(handler)
 }
 
 // init performs the full node bootstrap sequence.

@@ -47,8 +47,9 @@ type Manager struct {
 	eip8004           *eip8004.Client
 	eip8004Tokens     *eip8004.TokenStore
 
-	mu          sync.RWMutex
-	localAgents map[string]*LocalAgent
+	mu            sync.RWMutex
+	localAgents   map[string]*LocalAgent
+	customHandler func(ctx context.Context, agentID, input string) (string, error)
 }
 
 // LocalAgent represents a local agent managed by this node
@@ -95,6 +96,14 @@ func NewManager(runtimeCfg ADKConfig, ipfsClient *ipfs.Client, p2pHost *p2p.Host
 	return m, nil
 }
 
+// SetCustomHandler registers a custom task handler that is used instead of the
+// ADK runtime for agents registered with CustomHandler: true.
+func (m *Manager) SetCustomHandler(h func(ctx context.Context, agentID, input string) (string, error)) {
+	m.mu.Lock()
+	m.customHandler = h
+	m.mu.Unlock()
+}
+
 // SetTokenStore sets the EIP-8004 token store for persisting on-chain tokenIDs.
 func (m *Manager) SetTokenStore(ts *eip8004.TokenStore) {
 	m.eip8004Tokens = ts
@@ -102,44 +111,53 @@ func (m *Manager) SetTokenStore(ts *eip8004.TokenStore) {
 
 // RegisterAgent registers a new agent locally and publishes to marketplace
 func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgent, error) {
-	// Build per-agent runtime config, falling back to global defaults.
-	apiKey := spec.APIKey
-	if apiKey == "" {
-		apiKey = m.defaultCfg.APIKey
-	}
-	model := spec.Model
-	if model == "" {
-		model = m.defaultCfg.ModelName
-	}
-	provider := spec.Provider
-	if provider == "" {
-		provider = m.defaultCfg.Provider
-	}
-	openAIAPIKey := spec.OpenAIAPIKey
-	if openAIAPIKey == "" {
-		openAIAPIKey = m.defaultCfg.OpenAIAPIKey
-	}
-	openAIBaseURL := spec.OpenAIBaseURL
-	if openAIBaseURL == "" {
-		openAIBaseURL = m.defaultCfg.OpenAIBaseURL
-	}
-	rt, err := NewADKRuntime(ADKConfig{
-		AppName:       m.defaultCfg.AppName,
-		ModelName:     model,
-		APIKey:        apiKey,
-		PrivKey:       m.defaultCfg.PrivKey,
-		Provider:      provider,
-		OpenAIAPIKey:  openAIAPIKey,
-		OpenAIBaseURL: openAIBaseURL,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create agent runtime: %w", err)
-	}
+	var runtimeAgentID string
+	var rt *ADKRuntime
 
-	// Create agent in the per-agent runtime.
-	runtimeAgentID, err := rt.CreateAgent(ctx, spec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create agent: %w", err)
+	if spec.CustomHandler {
+		// Skip ADK runtime — agent will be served by a custom TaskHandler via sdk.Serve().
+		runtimeAgentID = GenerateDID(m.defaultCfg.PrivKey, m.defaultCfg.AppName, spec.Name)
+	} else {
+		// Build per-agent runtime config, falling back to global defaults.
+		apiKey := spec.APIKey
+		if apiKey == "" {
+			apiKey = m.defaultCfg.APIKey
+		}
+		model := spec.Model
+		if model == "" {
+			model = m.defaultCfg.ModelName
+		}
+		provider := spec.Provider
+		if provider == "" {
+			provider = m.defaultCfg.Provider
+		}
+		openAIAPIKey := spec.OpenAIAPIKey
+		if openAIAPIKey == "" {
+			openAIAPIKey = m.defaultCfg.OpenAIAPIKey
+		}
+		openAIBaseURL := spec.OpenAIBaseURL
+		if openAIBaseURL == "" {
+			openAIBaseURL = m.defaultCfg.OpenAIBaseURL
+		}
+		var err error
+		rt, err = NewADKRuntime(ADKConfig{
+			AppName:       m.defaultCfg.AppName,
+			ModelName:     model,
+			APIKey:        apiKey,
+			PrivKey:       m.defaultCfg.PrivKey,
+			Provider:      provider,
+			OpenAIAPIKey:  openAIAPIKey,
+			OpenAIBaseURL: openAIBaseURL,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create agent runtime: %w", err)
+		}
+
+		// Create agent in the per-agent runtime.
+		runtimeAgentID, err = rt.CreateAgent(ctx, spec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create agent: %w", err)
+		}
 	}
 
 	// Store metadata on IPFS
@@ -164,8 +182,13 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 	}
 
 	// Create local agent
+	agentID := m.p2pHost.ID().String() + "/" + runtimeAgentID
+	if spec.CustomHandler {
+		// DID is already globally unique — no peer ID prefix needed.
+		agentID = runtimeAgentID
+	}
 	agent := &LocalAgent{
-		ID:          m.p2pHost.ID().String() + "/" + runtimeAgentID,
+		ID:          agentID,
 		Name:        spec.Name,
 		Description: spec.Description,
 		Price:       spec.Price,
@@ -204,7 +227,9 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 
 	// Store locally, indexed by the runtime agent ID.
 	m.mu.Lock()
-	m.runtimes[runtimeAgentID] = rt
+	if rt != nil {
+		m.runtimes[runtimeAgentID] = rt
+	}
 	m.localAgents[agent.AgentID] = agent
 	m.mu.Unlock()
 
@@ -225,7 +250,18 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID, input string) (strin
 		// Execute locally using the per-agent runtime.
 		m.mu.RLock()
 		rt, rtok := m.runtimes[agent.AgentID]
+		handler := m.customHandler
 		m.mu.RUnlock()
+
+		// If no runtime, try the custom handler (for CustomHandler agents).
+		if !rtok && handler != nil {
+			fmt.Printf("[ExecuteTask] No runtime, using custom handler for agent: %s\n", agent.AgentID)
+			output, err := handler(ctx, agent.AgentID, input)
+			if err != nil {
+				return "", fmt.Errorf("custom handler failed: %w", err)
+			}
+			return output, nil
+		}
 		if !rtok {
 			return "", fmt.Errorf("runtime not found for agent: %s", agent.AgentID)
 		}
@@ -1032,6 +1068,10 @@ type AgentSpec struct {
 	Provider      string // "google", "openai", or "" for auto-detect
 	OpenAIAPIKey  string // OpenAI-compatible API key
 	OpenAIBaseURL string // OpenAI-compatible base URL
+
+	// CustomHandler skips ADK runtime creation. Use this when the agent
+	// will be served via sdk.Serve() with a custom TaskHandler.
+	CustomHandler bool
 }
 
 // ConnectToAgent connects to a remote agent via P2P

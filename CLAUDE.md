@@ -51,7 +51,7 @@ Targeting PL Genesis hackathon (Existing Code track), deadline March 31, 2026.
 
 **`/internal/config/`** — Environment-based config with sections: P2PConfig, IPFSConfig, EthereumConfig, AgentConfig, StorageConfig.
 
-**`/internal/eip8004/`** — On-chain agent registry client (not yet wired into marketplace flow).
+**`/internal/eip8004/`** — On-chain agent registry client (EIP-8004). Fully integrated into marketplace: agents with `on_chain: true` mint ERC-721 identity tokens, metadata stored on IPFS, token IDs persisted in `eip8004_tokens.json`. API enriches listings with on-chain reputation (`?on-chain=true`). Auto-submits reputation feedback after x402 payments. CLI flags: `--on-chain` on `start`/`agent serve`/`agent register`.
 
 **`/pkg/types/`** — Shared types: `AgentListing`, `AgentListingMessage`, `Order`, `TaskRequest`/`TaskResponse`.
 
@@ -61,11 +61,11 @@ Targeting PL Genesis hackathon (Existing Code track), deadline March 31, 2026.
 
 ### Data Flow
 
-1. Node starts → creates libp2p host → bootstraps DHT → subscribes to CRDT topic
-2. Agent registered → listing stored in CRDT (replicated across peers via GossipSub)
-3. Buyer discovers agent → opens P2P stream → sends `execute` message
+1. Node starts → creates libp2p host → bootstraps DHT → subscribes to CRDT topic → initializes EIP-8004 client (if configured)
+2. Agent registered → listing stored in CRDT (replicated across peers via GossipSub). If `on_chain: true` → metadata stored on IPFS → ERC-721 identity token minted via EIP-8004 → tokenID included in listing
+3. Buyer discovers agent → opens P2P stream → sends `execute` message. API can enrich listings with on-chain reputation (`?on-chain=true`)
 4. If payment required → x402 flow: seller returns 402, buyer signs USDC transfer, resends with payment header
-5. Seller verifies EIP-712 signature → executes agent → returns result → settles with facilitator
+5. Seller verifies EIP-712 signature → executes agent → returns result → settles with facilitator → auto-submits reputation feedback to EIP-8004 registry
 
 ### Environment Variables
 
@@ -78,3 +78,6 @@ Targeting PL Genesis hackathon (Existing Code track), deadline March 31, 2026.
 | `BETAR_P2P_KEY_PATH` | `~/.betar/p2p_identity.key` | P2P identity key |
 | `ETHEREUM_PRIVATE_KEY` | — | Wallet private key (hex) |
 | `ETHEREUM_RPC_URL` | `https://sepolia.base.org` | RPC endpoint |
+| `ERC8004_IDENTITY_ADDR` | `0x8004...BD9e` | EIP-8004 identity registry contract |
+| `REPUTATION_REGISTRY_ADDRESS` | — | Reputation registry contract |
+| `VALIDATION_REGISTRY_ADDRESS` | — | Validation registry contract |

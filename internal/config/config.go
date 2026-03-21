@@ -41,14 +41,14 @@ type IPFSConfig struct {
 
 // EthereumConfig holds Ethereum configuration
 type EthereumConfig struct {
-	RPCURL          string
-	PrivateKey      string
-	ChainID         int64
-	RegistryAddr    string // AgentRegistry (ERC-721) contract address
+	RPCURL           string
+	PrivateKey       string
+	ChainID          int64
+	RegistryAddr     string // AgentRegistry (ERC-721) contract address
 	PaymentVaultAddr string // x402 PaymentVault contract address
-	IdentityAddr    string // ERC-8004 IdentityRegistry contract address
-	ReputationAddr  string // ReputationRegistry contract address
-	ValidationAddr  string // ValidationRegistry contract address
+	IdentityAddr     string // ERC-8004 IdentityRegistry contract address
+	ReputationAddr   string // ReputationRegistry contract address
+	ValidationAddr   string // ValidationRegistry contract address
 }
 
 // AgentConfig holds agent configuration

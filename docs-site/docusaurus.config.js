@@ -58,6 +58,11 @@ const config = {
             label: 'Docs',
           },
           {
+            to: '/pitch-deck',
+            position: 'left',
+            label: 'Pitch Deck',
+          },
+          {
             href: 'https://github.com/asabya/betar',
             label: 'GitHub',
             position: 'right',

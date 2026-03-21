@@ -13,7 +13,7 @@ func Example() {
 
 	// Create a client — connects to the P2P network automatically.
 	client, err := sdk.NewClient(sdk.Config{
-		DataDir:    "/tmp/betar-example",
+		DataDir:      "/tmp/betar-example",
 		GoogleAPIKey: "your-api-key",
 	})
 	if err != nil {
