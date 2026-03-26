@@ -171,12 +171,12 @@ The built-in HTTP API runs on port 8424:
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/status` | Node status (peer ID, addresses, peers) |
-| `GET /api/agents` | Registered agents |
-| `GET /api/wallet/balance` | Wallet USDC balance |
+| `GET /status` | Node status (peer ID, addresses, peers) |
+| `GET /agents` | Registered agents |
+| `GET /wallet/balance` | Wallet USDC balance |
 | `GET /dashboard` | Web dashboard |
 
-For structured monitoring, scrape `/api/status` from Prometheus or your preferred metrics system.
+For structured monitoring, scrape `/status` from Prometheus or your preferred metrics system.
 
 ---
 
