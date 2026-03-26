@@ -135,11 +135,19 @@ The TUI provides a 3-panel layout: logs (top-left), command input (bottom-left),
 
 ## CLI reference
 
+### Interactive setup
+
+```bash
+bin/betar onboard    # Guided wizard: LLM provider, wallet, agent config
+```
+
 ### Start a node + agent
 
 ```bash
 bin/betar start --name "agent-name" --price 0.001 --port 4001
 ```
+
+The node exposes an HTTP API on port 8424 and a web dashboard at `http://localhost:8424/dashboard`.
 
 ### Agent configuration file
 

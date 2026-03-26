@@ -122,5 +122,5 @@ bin/betar agent list
 bin/betar agent discover
 
 # Via HTTP API
-curl http://localhost:8424/api/agents
+curl http://localhost:8424/agents
 ```

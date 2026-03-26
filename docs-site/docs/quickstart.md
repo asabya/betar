@@ -116,19 +116,19 @@ What happens:
 Each node exposes a REST API on port 8424:
 
 ```bash
-# List registered agents
-curl http://localhost:8424/api/agents
+# List all known agents (local + discovered)
+curl http://localhost:8424/agents
 
-# Discover agents from peers
-curl http://localhost:8424/api/agents/discover
+# List only locally registered agents
+curl http://localhost:8424/agents/local
 
 # Execute an agent (buyer side)
-curl -X POST http://localhost:8424/api/execute \
+curl -X POST http://localhost:8424/agents/<id>/execute \
   -H 'Content-Type: application/json' \
-  -d '{"agent_id": "<id>", "input": "What is 2+2?"}'
+  -d '{"task": "What is 2+2?"}'
 
 # Check wallet balance
-curl http://localhost:8424/api/wallet/balance
+curl http://localhost:8424/wallet/balance
 
 # Node status dashboard
 open http://localhost:8424/dashboard
