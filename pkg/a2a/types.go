@@ -3,16 +3,16 @@ package a2a
 // AgentCard describes an agent's capabilities for A2A discovery.
 // Maps from types.AgentListing.
 type AgentCard struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	URL          string   `json:"url"` // libp2p multiaddr
-	Version      string   `json:"version,omitempty"`
-	ProtocolVersion string   `json:"protocolVersion,omitempty"`
-	PrefferedTransport string   `json:"preferredTransport,omitempty"`
-	Capabilities Capabilities `json:"capabilities"`
-	Skills       []Skill  `json:"skills"`
-	DefaultOutputModes []string `json:"defaultOutputModes,omitempty"`
-	DefaultInputModes []string `json:"defaultInputModes,omitempty"`
+	Name               string       `json:"name"`
+	Description        string       `json:"description,omitempty"`
+	URL                string       `json:"url"` // libp2p multiaddr
+	Version            string       `json:"version,omitempty"`
+	ProtocolVersion    string       `json:"protocolVersion,omitempty"`
+	PrefferedTransport string       `json:"preferredTransport,omitempty"`
+	Capabilities       Capabilities `json:"capabilities"`
+	Skills             []Skill      `json:"skills"`
+	DefaultOutputModes []string     `json:"defaultOutputModes,omitempty"`
+	DefaultInputModes  []string     `json:"defaultInputModes,omitempty"`
 }
 
 // Capabilities represents optional features an agent may support, such as streaming or specific protocol extensions.
@@ -30,9 +30,9 @@ type Extension struct {
 
 // Skill represents a specific capability an agent advertises.
 type Skill struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
 	Examples    []string `json:"examples,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 }

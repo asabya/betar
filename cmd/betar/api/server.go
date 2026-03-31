@@ -67,8 +67,8 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 			path := fmt.Sprintf("/%s/.well-known/agent-card.json", listing.Name)
 			fmt.Printf("Registering agent card route: %s\n", path)
 			routes = append(routes, Route{
-				Path:    path,
-				Method:  "GET",
+				Path:   path,
+				Method: "GET",
 				Handler: func(w http.ResponseWriter, r *http.Request) {
 					var card *a2a.AgentCard
 					card = a2a.AgentListingToAgentCard(listing)
