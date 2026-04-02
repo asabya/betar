@@ -3,12 +3,13 @@ version: 2
 
 project_name: betar
 
+env:
+  - NODE_ENV=production
+
 before:
   hooks:
     - go mod tidy
-    - cmd: bash -c 'cd web && npm ci && VITE_API_URL="" npm run build && rm -rf ../cmd/betar/dashboard/dist && cp -r dist ../cmd/betar/dashboard/dist'
-      env:
-        - NODE_ENV=production
+    - cd web && npm ci && VITE_API_URL="" npm run build && rm -rf ../cmd/betar/dashboard/dist && cp -r dist ../cmd/betar/dashboard/dist
 
 builds:
   - id: betar
