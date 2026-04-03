@@ -311,8 +311,11 @@ func (c *Client) init() error {
 	// Payment service (optional — requires Ethereum config)
 	if cfg.Ethereum != nil && cfg.Ethereum.PrivateKey != "" {
 		c.walletAddr, _ = config.GetAddressFromKey(cfg.Ethereum.PrivateKey)
+		fmt.Printf("Wallet address: %s\n", c.walletAddr)
+		fmt.Printf("Ethereum RPC: %s\n", cfg.Ethereum.RPCURL)
 		if cfg.Ethereum.RPCURL != "" {
 			wallet, err := eth.NewWallet(cfg.Ethereum.PrivateKey, cfg.Ethereum.RPCURL)
+			fmt.Printf("Ethereum wallet initialized ???: %v\n", err)
 			if err == nil {
 				c.payment = marketplace.NewPaymentService(wallet, c.walletAddr)
 			}
