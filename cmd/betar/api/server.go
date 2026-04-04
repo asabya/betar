@@ -56,31 +56,25 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 	// A2A Agent Card discovery
 	// Agent card example
 	// {"capabilities":{"extensions":[{"description":"Supports payments using the x402 protocol.","required":true,"uri":"https://github.com/google-a2a/a2a-x402/v0.1"}],"streaming":false},"defaultInputModes":["text","text/plain"],"defaultOutputModes":["text","text/plain"],"description":"Fast code generation with Gemini 2.5 Flash Lite","name":"gemini_2_5_flash_lite","preferredTransport":"JSONRPC","protocolVersion":"0.3.0","skills":[{"description":"Generates code based on user input.","examples":["Can you write a Python function to add two numbers?","Generate a SQL query to find all users with a specific email."],"id":"generate_code","name":"Generate Code and code completion","tags":["coding","generation","x402"]}],"url":"http://localhost:10000/agents/gemini-2.5-flash-lite","version":"0.0.1"}
-	var routes []Route
 	if listingSvc != nil {
-		listings := listingSvc.ListListings()
-		for _, listing := range listings {
-			if listing == nil {
-				fmt.Println("⚠️ Warning: encountered nil listing")
-				continue
-			}
-			path := fmt.Sprintf("/%s/.well-known/agent-card.json", listing.Name)
-			fmt.Printf("Registering agent card route: %s\n", path)
-			routes = append(routes, Route{
-				Path:   path,
-				Method: "GET",
-				Handler: func(w http.ResponseWriter, r *http.Request) {
-					var card *a2a.AgentCard
-					card = a2a.AgentListingToAgentCard(listing)
-					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(card)
-				},
-			})
-		}
+		r.HandleFunc("/{agentName}/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
+			listings := listingSvc.ListListings()
+			vars := mux.Vars(r)
+			agentName := vars["agentName"]
 
-		for _, route := range routes {
-			r.HandleFunc(route.Path, route.Handler).Methods(route.Method)
-		}
+			for _, listing := range listings {
+				if listing == nil {
+						continue
+				}
+				if listing.Name == agentName {
+						card := a2a.AgentListingToAgentCard(listing)
+						w.Header().Set("Content-Type", "application/json")
+						json.NewEncoder(w).Encode(card)
+						return
+				}
+			}
+			http.Error(w, `{"error":"agent not found"}`, http.StatusNotFound)
+		}).Methods("GET")
 	}
 
 	// Dashboard — embedded React SPA
