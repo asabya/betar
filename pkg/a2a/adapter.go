@@ -10,7 +10,8 @@ import (
 func AgentListingToAgentCard(listing *types.AgentListing) *AgentCard {
 	url := listing.SellerID
 	if len(listing.Addrs) > 0 {
-		url = listing.Addrs[0]
+		// url = listing.Addrs[0]
+		url = fmt.Sprintf("/agents/%s/execute", listing.ID)
 	}
 
 	var skills []Skill
