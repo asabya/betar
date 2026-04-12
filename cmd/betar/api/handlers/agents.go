@@ -119,20 +119,57 @@ func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	agentID := vars["id"]
 
-	var req struct {
-		Input string `json:"input"`
-	}
+	var req *types.AgentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, req.Input)
+	// If input is provided then we look for configured agents and execute
+	// Otherwise, we forward http request to configured agent API and return the response as is.
+
+	if req.Input != "" {
+		output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, types.AgentRequest{
+			ID:       req.ID,
+			Input:    req.Input,
+			Params:   req.Params,
+			Jsonrpc:  req.Jsonrpc,
+			Method:   req.Method,
+			Resource: req.Resource,
+		})
+		if err != nil {
+			http.Error(w, fmt.Sprintf("execution failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"output": output})
+		return
+	}
+
+	if !(len(req.Params.Message.Parts) > 0) {
+		http.Error(w, "request body must contain 'parts' array when passing params in body.", http.StatusBadRequest)
+		return
+	}
+
+	output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, types.AgentRequest{
+		ID:       req.ID,
+		Params:   req.Params,
+		Jsonrpc:  req.Jsonrpc,
+		Method:   req.Method,
+		Resource: req.Resource,
+	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("execution failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-
+	var jsonOutput *struct {
+		MessageType string          `json:"message_type"`
+		Message     json.RawMessage `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(output), &jsonOutput); err == nil {
+		// This is to match SendMessageSuccessResponse format in adk-client
+		json.NewEncoder(w).Encode(jsonOutput.Message)
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"output": output})
 }
 
