@@ -26,10 +26,10 @@ func (m *Manager) handleExecuteRequest(ctx context.Context, from peer.ID, data [
 		fmt.Println("Error:", err.Error())
 		resp := ExecuteRequestResponse{
 			MessageType: marketplace.MsgTypeExecError,
-			Message:     fmt.Sprintf("failed to unmarshal execute request: %v", err),
+			Message:     fmt.Sprintf("failed to unmarshal execute request: %v", err.Error()),
 		}
 		respData, _ := json.Marshal(resp)
-		return respData, fmt.Errorf("failed to unmarshal execute request: %w", err)
+		return respData, fmt.Errorf("failed to unmarshal execute request: %v", err.Error())
 	}
 	callerID := req.CallerDID
 	msgType, msgData, err := m.httpExecuteAndRespond(ctx, req.CorrelationID, req.Resource, req.Body, callerID)
@@ -37,17 +37,16 @@ func (m *Manager) handleExecuteRequest(ctx context.Context, from peer.ID, data [
 		fmt.Println("Error in httpExecuteAndRespond:", err.Error())
 		resp := ExecuteRequestResponse{
 			MessageType: marketplace.MsgTypeExecError,
-			Message:     fmt.Sprintf("execution failed: %v", err),
+			Message:     fmt.Sprintf("execution failed: %v", err.Error()),
 		}
 		respData, _ := json.Marshal(resp)
-		return respData, fmt.Errorf("execution failed: %w", err)
+		return respData, fmt.Errorf("execution failed: %v", err.Error())
 	}
 	resp := ExecuteRequestResponse{
 		MessageType: msgType,
 		Message:     json.RawMessage(msgData),
 	}
 	respData, _ := json.Marshal(resp)
-	m.streamHandler.SendMessage(ctx, from, msgType, msgData)
 	return respData, nil
 }
 
@@ -293,10 +292,6 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 
 // httpExecuteAndRespond is the HTTP handler for executing an agent task via REST.
 func (m *Manager) httpExecuteAndRespond(ctx context.Context, correlationID, resource string, rawBody []byte, callerID string) (string, []byte, error) {
-	var bodyPayload types.AgentRequest
-	if len(rawBody) > 0 {
-		_ = json.Unmarshal(rawBody, &bodyPayload)
-	}
 	apiURL := ""
 	if m.listingService != nil {
 		if listing, ok := m.listingService.GetListing(resource); ok {
@@ -308,12 +303,20 @@ func (m *Manager) httpExecuteAndRespond(ctx context.Context, correlationID, reso
 		return marketplace.MsgTypeExecError, nil, fmt.Errorf("agent API URL not found for resource: %s", resource)
 	}
 
-	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(rawBody)))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(string(rawBody)))
+	if err != nil {
+		return marketplace.MsgTypeExecError, nil, fmt.Errorf("error creating HTTP request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		fmt.Println("Error making HTTP request:", err.Error())
 		return marketplace.MsgTypeExecError, nil, fmt.Errorf("error making HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
+
 	var execResp types.AgentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&execResp); err != nil {
 		fmt.Println("Error decoding HTTP response:", err.Error())
@@ -327,7 +330,11 @@ func (m *Manager) httpExecuteAndRespond(ctx context.Context, correlationID, reso
 		}
 		return marketplace.MsgTypeExecPaymentRequired, output, nil
 	}
-	return marketplace.MsgTypeExecPaymentRequired, nil, nil
+	output, err := json.Marshal(execResp)
+	if err != nil {
+		return marketplace.MsgTypeExecError, nil, fmt.Errorf("error marshaling execution response: %w", err)
+	}
+	return marketplace.MsgTypeExecResponse, output, nil
 }
 
 // executeAndRespond executes a free agent and returns an x402.response.
