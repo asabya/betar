@@ -36,6 +36,7 @@ type ADKConfig struct {
 	Provider      string // "google", "openai", or "" for auto-detect
 	OpenAIAPIKey  string // OpenAI-compatible API key
 	OpenAIBaseURL string // OpenAI-compatible base URL (empty = api.openai.com)
+	AgentAPI      string // URL for custom agent hosting (must implement /execute endpoint)
 }
 
 // Runtime defines required agent runtime capabilities.
@@ -212,8 +213,8 @@ func (r *ADKRuntime) CreateAgent(ctx context.Context, spec AgentSpec) (string, e
 }
 
 func (r *ADKRuntime) CreateHTTPAgent(ctx context.Context, spec AgentSpec) (string, error) {
-	if strings.TrimSpace(spec.AgentURL) == "" {
-		return "", fmt.Errorf("agent URL is required")
+	if strings.TrimSpace(spec.AgentAPI) == "" {
+		return "", fmt.Errorf("Agent API URL is required")
 	}
 	name := strings.TrimSpace(spec.Name)
 	if name == "" {
@@ -221,13 +222,14 @@ func (r *ADKRuntime) CreateHTTPAgent(ctx context.Context, spec AgentSpec) (strin
 	}
 
 	a, err := remoteagent.NewA2A(remoteagent.A2AConfig{
-		Name:            name,
-		AgentCardSource: "http://localhost:1000/gemini-2.5-flash-lite/execute",
+		Name: name,
+		// AgentCardSource: "http://localhost:8424/coding-agent/.well-known/agent-card.json",
+		AgentCardSource: spec.AgentCardSource,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create remote agent: %w", err)
 	}
-	
+
 	sessionSvc := session.InMemoryService()
 	agentID := r.generateAgentDID(name)
 	userID := "marketplace"

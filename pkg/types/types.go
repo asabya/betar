@@ -3,6 +3,8 @@ package types
 import (
 	"encoding/json"
 	"time"
+
+	"google.golang.org/genai"
 )
 
 // AgentRegistration represents an agent's on-chain registration (EIP-8004)
@@ -41,6 +43,7 @@ type AgentListing struct {
 	Timestamp         int64              `json:"timestamp"`                   // Unix timestamp
 	TokenID           string             `json:"tokenId,omitempty"`           // EIP-8004 on-chain token ID
 	OnChainReputation *OnChainReputation `json:"onChainReputation,omitempty"` // On-chain reputation (when available)
+	AgentAPI          string             `json:"agentApi,omitempty"`          // Optional API endpoint for the agent
 }
 
 // Order represents a marketplace order
@@ -66,6 +69,7 @@ type AgentListingMessage struct {
 	Protocols []string `json:"protocols,omitempty"`
 	Timestamp int64    `json:"timestamp"`
 	TokenID   string   `json:"tokenId,omitempty"`
+	AgentAPI  string   `json:"agentApi,omitempty"`
 }
 
 // OrderMessage represents a pubsub message for order updates
@@ -120,4 +124,70 @@ func ToJSON(v interface{}) ([]byte, error) {
 // FromJSON deserializes JSON bytes to a struct
 func FromJSON(data []byte, v interface{}) error {
 	return json.Unmarshal(data, v)
+}
+
+type Params struct {
+	Message struct {
+		Kind      string       `json:"kind"`
+		MessageID string       `json:"messageId"`
+		Parts     []genai.Part `json:"parts"`
+		Role      string       `json:"role"`
+	} `json:"message"`
+}
+type AgentRequest struct {
+	ID       string `json:"id,omitempty"`
+	Jsonrpc  string `json:"jsonrpc,omitempty"`
+	Method   string `json:"method,omitempty"`
+	Params   Params `json:"params"`
+	Input    string `json:"input,omitempty"`
+	Resource string `json:"resource,omitempty"`
+}
+
+type AgentResponse struct {
+	ID      string `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Result  struct {
+		ContextID string `json:"contextId"`
+		ID        string `json:"id"`
+		Kind      string `json:"kind"`
+		Metadata  struct {
+		} `json:"metadata"`
+		Status struct {
+			Message struct {
+				Kind      string `json:"kind"`
+				MessageID string `json:"messageId"`
+				Metadata  struct {
+					X402PaymentStatus   string `json:"x402.payment.status"`
+					X402PaymentRequired struct {
+						X402Version int    `json:"x402Version"`
+						Error       string `json:"error"`
+						Resource    struct {
+							URL         string `json:"url"`
+							Description string `json:"description"`
+							MimeType    string `json:"mimeType"`
+						} `json:"resource"`
+						Accepts []struct {
+							Scheme            string `json:"scheme"`
+							Network           string `json:"network"`
+							Asset             string `json:"asset"`
+							Amount            string `json:"amount"`
+							PayTo             string `json:"payTo"`
+							MaxTimeoutSeconds int    `json:"maxTimeoutSeconds"`
+							Extra             struct {
+								Model      string `json:"model"`
+								Capability string `json:"capability"`
+								Product    struct {
+									Name string `json:"name"`
+								} `json:"product"`
+							} `json:"extra"`
+						} `json:"accepts"`
+						Extensions any `json:"extensions"`
+					} `json:"x402.payment.required"`
+				} `json:"metadata"`
+				Parts []genai.Part `json:"parts"`
+				Role  string       `json:"role"`
+			} `json:"message"`
+			State string `json:"state"`
+		} `json:"status"`
+	} `json:"result"`
 }

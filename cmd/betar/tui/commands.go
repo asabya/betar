@@ -174,7 +174,8 @@ func executeAgent(args string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	output, err := mgr.ExecuteTask(ctx, parts[0], parts[1])
+	req := types.AgentRequest{Input: parts[1]}
+	output, err := mgr.ExecuteTask(ctx, parts[0], req)
 	if err != nil {
 		return []string{fmt.Sprintf("Execution failed: %v", err)}
 	}

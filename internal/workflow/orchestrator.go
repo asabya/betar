@@ -13,7 +13,7 @@ import (
 // TaskExecutor abstracts agent task execution so the orchestrator can be tested
 // with mocks. agent.Manager satisfies this interface directly.
 type TaskExecutor interface {
-	ExecuteTask(ctx context.Context, agentID, input string) (string, error)
+	ExecuteTask(ctx context.Context, agentID string, input types.AgentRequest) (string, error)
 }
 
 // Orchestrator manages workflow creation, execution, and lifecycle.
@@ -119,7 +119,7 @@ func (o *Orchestrator) RunWorkflow(ctx context.Context, workflowID string) (*typ
 		wf.UpdatedAt = now
 		_ = o.store.Save(ctx, wf)
 
-		output, err := o.executor.ExecuteTask(ctx, wf.Steps[i].AgentID, input)
+		output, err := o.executor.ExecuteTask(ctx, wf.Steps[i].AgentID, types.AgentRequest{Input: input})
 
 		now = time.Now()
 		if err != nil {

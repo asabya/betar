@@ -58,7 +58,8 @@ type LocalAgent struct {
 	AgentID     string    `json:"agentID"` // ADK runtime agent ID
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"createdAt"`
-	TokenID     *big.Int  `json:"tokenId,omitempty"` // EIP-8004 on-chain token ID
+	TokenID     *big.Int  `json:"tokenId,omitempty"`  // EIP-8004 on-chain token ID
+	AgentAPI    string    `json:"agentApi,omitempty"` // Optional API endpoint for the agent
 }
 
 // NewManager creates a new agent manager
@@ -157,6 +158,7 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		if openAIBaseURL == "" {
 			openAIBaseURL = m.defaultCfg.OpenAIBaseURL
 		}
+		agentAPI := spec.AgentAPI
 		var err error
 		rt, err = NewADKRuntime(ADKConfig{
 			AppName:       m.defaultCfg.AppName,
@@ -166,14 +168,14 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 			Provider:      provider,
 			OpenAIAPIKey:  openAIAPIKey,
 			OpenAIBaseURL: openAIBaseURL,
+			AgentAPI:      agentAPI,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create agent runtime: %w", err)
 		}
 
 		// Create agent in the per-agent runtime.
-		if spec.AgentURL != "" {
-			fmt.Println("-------> Creating HTTP Agent <-------")
+		if agentAPI != "" {
 			// For custom agent hosting, the "model" is actually the agent URL.
 			runtimeAgentID, err = rt.CreateHTTPAgent(ctx, spec)
 			for i := 0; i < len(rt.agents); i++ {
@@ -223,6 +225,7 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 		AgentID:     runtimeAgentID,
 		Status:      "active",
 		CreatedAt:   time.Now(),
+		AgentAPI:    spec.AgentAPI,
 	}
 
 	// Best-effort on-chain registration via EIP-8004 (only when explicitly requested)
@@ -294,7 +297,6 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID string, request types
 		}
 
 		requestID := fmt.Sprintf("local-%d", time.Now().UnixNano())
-		fmt.Printf("[ExecuteTask] Executing locally with requestID: %s\n", requestID)
 
 		result, err := rt.RunTask(ctx, types.TaskRequest{
 			AgentID:   agent.AgentID,
@@ -449,10 +451,11 @@ type AgentSpec struct {
 	OnChain     bool // if true, register on-chain via EIP-8004 (default: false)
 
 	// Provider fields
-	Provider      string // "google", "openai", or "" for auto-detect
-	OpenAIAPIKey  string // OpenAI-compatible API key
-	OpenAIBaseURL string // OpenAI-compatible base URL
-	AgentURL      string // URL for custom agent hosting (must implement /execute endpoint)
+	Provider        string // "google", "openai", or "" for auto-detect
+	OpenAIAPIKey    string // OpenAI-compatible API key
+	OpenAIBaseURL   string // OpenAI-compatible base URL
+	AgentAPI        string // URL for custom agent hosting (must implement /execute endpoint)
+	AgentCardSource string // "AgentCardSource" URL
 
 	// CustomHandler skips ADK runtime creation. Use this when the agent
 	// will be served via sdk.Serve() with a custom TaskHandler.

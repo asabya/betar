@@ -13,7 +13,7 @@ import (
 // mockExecutor implements TaskExecutor with configurable per-agent behaviour.
 type mockExecutor struct {
 	mu       sync.Mutex
-	handlers map[string]func(ctx context.Context, input string) (string, error)
+	handlers map[string]func(ctx context.Context, req types.AgentRequest) (string, error)
 	calls    []executorCall // records every call for inspection
 }
 
@@ -24,26 +24,26 @@ type executorCall struct {
 
 func newMockExecutor() *mockExecutor {
 	return &mockExecutor{
-		handlers: make(map[string]func(ctx context.Context, input string) (string, error)),
+		handlers: make(map[string]func(ctx context.Context, req types.AgentRequest) (string, error)),
 	}
 }
 
-func (m *mockExecutor) on(agentID string, fn func(ctx context.Context, input string) (string, error)) {
+func (m *mockExecutor) on(agentID string, fn func(ctx context.Context, req types.AgentRequest) (string, error)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.handlers[agentID] = fn
 }
 
-func (m *mockExecutor) ExecuteTask(ctx context.Context, agentID, input string) (string, error) {
+func (m *mockExecutor) ExecuteTask(ctx context.Context, agentID string, req types.AgentRequest) (string, error) {
 	m.mu.Lock()
-	m.calls = append(m.calls, executorCall{AgentID: agentID, Input: input})
+	m.calls = append(m.calls, executorCall{AgentID: agentID, Input: req.Input})
 	fn, ok := m.handlers[agentID]
 	m.mu.Unlock()
 
 	if !ok {
 		return "", fmt.Errorf("no handler for agent %s", agentID)
 	}
-	return fn(ctx, input)
+	return fn(ctx, req)
 }
 
 // ---------------------------------------------------------------------------
@@ -52,14 +52,14 @@ func (m *mockExecutor) ExecuteTask(ctx context.Context, agentID, input string) (
 
 func TestThreeStepChainPipesOutput(t *testing.T) {
 	exec := newMockExecutor()
-	exec.on("agent-1", func(_ context.Context, input string) (string, error) {
-		return input + "+out1", nil
+	exec.on("agent-1", func(_ context.Context, req types.AgentRequest) (string, error) {
+		return req.Input + "+out1", nil
 	})
-	exec.on("agent-2", func(_ context.Context, input string) (string, error) {
-		return input + "+out2", nil
+	exec.on("agent-2", func(_ context.Context, req types.AgentRequest) (string, error) {
+		return req.Input + "+out2", nil
 	})
-	exec.on("agent-3", func(_ context.Context, input string) (string, error) {
-		return input + "+out3", nil
+	exec.on("agent-3", func(_ context.Context, req types.AgentRequest) (string, error) {
+		return req.Input + "+out3", nil
 	})
 
 	orch := NewOrchestrator(exec, NewMemoryStore())
@@ -108,13 +108,13 @@ func TestThreeStepChainPipesOutput(t *testing.T) {
 
 func TestStepFailureSkipsRemaining(t *testing.T) {
 	exec := newMockExecutor()
-	exec.on("agent-1", func(_ context.Context, input string) (string, error) {
+	exec.on("agent-1", func(_ context.Context, req types.AgentRequest) (string, error) {
 		return "ok", nil
 	})
-	exec.on("agent-2", func(_ context.Context, input string) (string, error) {
+	exec.on("agent-2", func(_ context.Context, req types.AgentRequest) (string, error) {
 		return "", fmt.Errorf("boom")
 	})
-	exec.on("agent-3", func(_ context.Context, input string) (string, error) {
+	exec.on("agent-3", func(_ context.Context, req types.AgentRequest) (string, error) {
 		return "should-not-run", nil
 	})
 
@@ -154,16 +154,16 @@ func TestCancelMidWorkflow(t *testing.T) {
 
 	step1Done := make(chan struct{})
 
-	exec.on("agent-1", func(_ context.Context, input string) (string, error) {
+	exec.on("agent-1", func(_ context.Context, req types.AgentRequest) (string, error) {
 		return "out1", nil
 	})
-	exec.on("agent-2", func(ctx context.Context, input string) (string, error) {
+	exec.on("agent-2", func(ctx context.Context, req types.AgentRequest) (string, error) {
 		// Signal that step 2 is running, then block until context is canceled.
 		close(step1Done)
 		<-ctx.Done()
 		return "", ctx.Err()
 	})
-	exec.on("agent-3", func(_ context.Context, input string) (string, error) {
+	exec.on("agent-3", func(_ context.Context, req types.AgentRequest) (string, error) {
 		return "should-not-run", nil
 	})
 
@@ -215,8 +215,8 @@ func TestCancelMidWorkflow(t *testing.T) {
 
 func TestSingleStepWorkflow(t *testing.T) {
 	exec := newMockExecutor()
-	exec.on("solo", func(_ context.Context, input string) (string, error) {
-		return "result-" + input, nil
+	exec.on("solo", func(_ context.Context, req types.AgentRequest) (string, error) {
+		return "result-" + req.Input, nil
 	})
 
 	orch := NewOrchestrator(exec, NewMemoryStore())

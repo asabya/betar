@@ -243,7 +243,7 @@ func (c *Client) Discover(ctx context.Context, query string) ([]AgentListing, er
 // agent requires payment, the x402 flow is handled automatically using the
 // configured Ethereum wallet.
 func (c *Client) Execute(ctx context.Context, agentID, input string) (string, error) {
-	output, err := c.manager.ExecuteTask(ctx, agentID, input)
+	output, err := c.manager.ExecuteTask(ctx, agentID, types.AgentRequest{Input: input})
 	if err != nil {
 		return "", fmt.Errorf("sdk: execute: %w", err)
 	}
