@@ -10,8 +10,7 @@ import (
 func AgentListingToAgentCard(listing *types.AgentListing) *AgentCard {
 	url := listing.SellerID
 	if len(listing.Addrs) > 0 {
-		// url = listing.Addrs[0]
-		url = fmt.Sprintf("/agents/%s/execute", listing.ID)
+		url = listing.Addrs[0]
 	}
 
 	var skills []Skill
@@ -46,7 +45,7 @@ func AgentListingToAgentCard(listing *types.AgentListing) *AgentCard {
 		DefaultOutputModes: []string{"text", "text/plain"},
 		Version:            "0.0.1",
 		ProtocolVersion:    "0.3.0",
-		PrefferedTransport: "JSONRPC",
+		PreferredTransport: "JSONRPC",
 		URL:                url,
 		Skills:             skills,
 		Capabilities:       capabilities,

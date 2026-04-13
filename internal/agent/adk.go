@@ -222,8 +222,7 @@ func (r *ADKRuntime) CreateHTTPAgent(ctx context.Context, spec AgentSpec) (strin
 	}
 
 	a, err := remoteagent.NewA2A(remoteagent.A2AConfig{
-		Name: name,
-		// AgentCardSource: "http://localhost:8424/coding-agent/.well-known/agent-card.json",
+		Name:            name,
 		AgentCardSource: spec.AgentCardSource,
 	})
 	if err != nil {

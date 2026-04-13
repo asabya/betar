@@ -8,7 +8,7 @@ type AgentCard struct {
 	URL                string       `json:"url"` // libp2p multiaddr
 	Version            string       `json:"version,omitempty"`
 	ProtocolVersion    string       `json:"protocolVersion,omitempty"`
-	PrefferedTransport string       `json:"preferredTransport,omitempty"`
+	PreferredTransport string       `json:"preferredTransport,omitempty"`
 	Capabilities       Capabilities `json:"capabilities"`
 	Skills             []Skill      `json:"skills"`
 	DefaultOutputModes []string     `json:"defaultOutputModes,omitempty"`

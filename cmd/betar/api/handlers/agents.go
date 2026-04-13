@@ -119,7 +119,7 @@ func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	agentID := vars["id"]
 
-	var req *types.AgentRequest
+	var req types.AgentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -127,6 +127,8 @@ func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 
 	// If input is provided then we look for configured agents and execute
 	// Otherwise, we forward http request to configured agent API and return the response as is.
+
+	w.Header().Set("Content-Type", "application/json")
 
 	if req.Input != "" {
 		output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, types.AgentRequest{

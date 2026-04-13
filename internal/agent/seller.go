@@ -304,6 +304,10 @@ func (m *Manager) httpExecuteAndRespond(ctx context.Context, correlationID, reso
 		}
 	}
 
+	if apiURL == "" {
+		return marketplace.MsgTypeExecError, nil, fmt.Errorf("agent API URL not found for resource: %s", resource)
+	}
+
 	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(rawBody)))
 	if err != nil {
 		fmt.Println("Error making HTTP request:", err.Error())

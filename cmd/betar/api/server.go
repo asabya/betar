@@ -71,7 +71,10 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 					return
 				}
 			}
-			http.Error(w, `{"error":"agent not found"}`, http.StatusNotFound)
+			// http.Error(w, `{"error":"agent not found"}`, http.StatusNotFound)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "agent not found"})
 		}).Methods("GET")
 	}
 
@@ -82,6 +85,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 
 	// Health check
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
