@@ -7,10 +7,12 @@ import (
 )
 
 // AgentListingToAgentCard converts a Betar AgentListing to an A2A AgentCard.
-func AgentListingToAgentCard(listing *types.AgentListing) *AgentCard {
+func AgentListingToAgentCard(listing *types.AgentListing, port int) *AgentCard {
 	url := listing.SellerID
 	if len(listing.Addrs) > 0 {
-		url = listing.Addrs[0]
+		// url = listing.Addrs[0]
+		// TODO: expected URL format should be - http://localhost:{port}/agents/{agent-id}/execute
+		url = fmt.Sprintf("http://localhost:%d/agents/%s/execute", port, listing.ID)
 	}
 
 	var skills []Skill

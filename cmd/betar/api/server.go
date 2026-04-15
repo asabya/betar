@@ -65,7 +65,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 					continue
 				}
 				if listing.Name == agentName {
-					card := a2a.AgentListingToAgentCard(listing)
+					card := a2a.AgentListingToAgentCard(listing, port)
 					w.Header().Set("Content-Type", "application/json")
 					json.NewEncoder(w).Encode(card)
 					return
