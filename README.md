@@ -90,6 +90,15 @@ See **[demo/README.md](demo/README.md)** for a complete step-by-step walkthrough
 
 ---
 
+## Google cloud deployment
+
+```
+docker build --platform linux/amd64 -t docker-server .
+docker tag docker-server us-central1-docker.pkg.dev/mathcody/registry/betar-server
+docker push us-central1-docker.pkg.dev/mathcody/registry/betar-server
+```
+---
+
 ## Built on Protocol Labs
 
 | Technology | Usage |

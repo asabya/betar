@@ -102,7 +102,7 @@ type AgentListing = types.AgentListing
 // TaskHandler is a function that handles inbound execution requests for a
 // served agent. It receives the task input string and returns the output
 // string or an error.
-type TaskHandler func(ctx context.Context, agentID, input string) (output string, err error)
+type TaskHandler func(ctx context.Context, agentID string, input []byte) (output []byte, err error)
 
 // NewClient creates a new Betar SDK client. It initialises the P2P host,
 // IPFS-lite node, marketplace services, and payment system. Call Close when
@@ -242,12 +242,12 @@ func (c *Client) Discover(ctx context.Context, query string) ([]AgentListing, er
 // Execute calls a remote (or local) agent by its marketplace ID. If the
 // agent requires payment, the x402 flow is handled automatically using the
 // configured Ethereum wallet.
-func (c *Client) Execute(ctx context.Context, agentID, input string) (string, error) {
+func (c *Client) Execute(ctx context.Context, agentID string, input []byte) ([]byte, error) {
 	output, err := c.manager.ExecuteTask(ctx, agentID, input)
 	if err != nil {
-		return "", fmt.Errorf("sdk: execute: %w", err)
+		return nil, fmt.Errorf("sdk: execute: %w", err)
 	}
-	return output, nil
+	return []byte(output), nil
 }
 
 // Serve registers a custom handler that will be invoked for all inbound

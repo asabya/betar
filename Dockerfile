@@ -3,10 +3,13 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
 # Install build deps
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make nodejs npm
 
 COPY go.mod go.sum ./
 RUN go mod download
+
+COPY web/package*.json ./web/
+RUN cd web && npm ci
 
 COPY . .
 RUN make build

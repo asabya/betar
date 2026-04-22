@@ -1,0 +1,5 @@
+node_modules
+web/node_modules
+docs-site/node_modules
+bin
+.git

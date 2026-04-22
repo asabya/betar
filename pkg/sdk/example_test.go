@@ -44,12 +44,12 @@ func Example() {
 
 	// Execute a discovered agent — x402 payment handled automatically.
 	if len(listings) > 0 {
-		output, err := client.Execute(ctx, listings[0].ID, "Summarize this document...")
+		output, err := client.Execute(ctx, listings[0].ID, []byte("Summarize this document..."))
 		if err != nil {
 			fmt.Println("failed to execute:", err)
 			return
 		}
-		fmt.Println("Result:", output)
+		fmt.Println("Result:", string(output))
 	}
 }
 
@@ -64,8 +64,8 @@ func Example_serve() {
 	defer client.Close()
 
 	// Register a custom handler for inbound requests.
-	client.Serve(func(ctx context.Context, agentID, input string) (string, error) {
-		return "Echo: " + input, nil
+	client.Serve(func(ctx context.Context, agentID string, input []byte) ([]byte, error) {
+		return []byte("Echo: " + string(input)), nil
 	})
 
 	fmt.Println("Serving on peer:", client.PeerID())

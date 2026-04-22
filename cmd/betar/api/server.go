@@ -25,6 +25,12 @@ type Server struct {
 	paymentService *marketplace.PaymentService
 }
 
+type Route struct {
+	Path    string
+	Method  string
+	Handler http.HandlerFunc
+}
+
 func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentListingService, orderSvc *marketplace.OrderService, p2pHost *p2p.Host, paymentSvc *marketplace.PaymentService, sessionStore handlers.SessionQuerier, orch *workflow.Orchestrator, walletAddr, dataDir string, eip8004Client ...*eip8004.Client) *Server {
 	r := mux.NewRouter()
 
@@ -49,16 +55,26 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 
 	// A2A Agent Card discovery
 	if listingSvc != nil {
-		r.HandleFunc("/.well-known/agent.json", func(w http.ResponseWriter, r *http.Request) {
+		r.HandleFunc("/agents/{agentName}/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
 			listings := listingSvc.ListListings()
-			var cards []*a2a.AgentCard
-			for _, l := range listings {
-				if l != nil {
-					cards = append(cards, a2a.AgentListingToAgentCard(l))
+			vars := mux.Vars(r)
+			agentName := vars["agentName"]
+
+			for _, listing := range listings {
+				if listing == nil {
+					continue
+				}
+				if listing.Name == agentName {
+					card := a2a.AgentListingToAgentCard(listing, port)
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(card)
+					return
 				}
 			}
+			// http.Error(w, `{"error":"agent not found"}`, http.StatusNotFound)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(cards)
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "agent not found"})
 		}).Methods("GET")
 	}
 
@@ -69,6 +85,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 
 	// Health check
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})

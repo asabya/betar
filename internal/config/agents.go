@@ -11,15 +11,17 @@ import (
 
 // AgentProfile holds the persistent configuration for a single agent.
 type AgentProfile struct {
-	Name          string  `yaml:"name"`
-	Description   string  `yaml:"description"`
-	Price         float64 `yaml:"price"`
-	Model         string  `yaml:"model,omitempty"`           // falls back to GOOGLE_MODEL env
-	APIKey        string  `yaml:"api_key,omitempty"`         // Google API key; falls back to GOOGLE_API_KEY env
-	Provider      string  `yaml:"provider,omitempty"`        // "google", "openai", or "" for auto-detect
-	OpenAIAPIKey  string  `yaml:"openai_api_key,omitempty"`  // OpenAI-compatible API key
-	OpenAIBaseURL string  `yaml:"openai_base_url,omitempty"` // OpenAI-compatible base URL
-	OnChain       bool    `yaml:"on_chain,omitempty"`        // mint ERC-721 on AgentRegistry (requires wallet)
+	Name            string  `yaml:"name"`
+	Description     string  `yaml:"description"`
+	Price           float64 `yaml:"price"`
+	Model           string  `yaml:"model,omitempty"`             // falls back to GOOGLE_MODEL env
+	APIKey          string  `yaml:"api_key,omitempty"`           // Google API key; falls back to GOOGLE_API_KEY env
+	Provider        string  `yaml:"provider,omitempty"`          // "google", "openai", or "" for auto-detect
+	OpenAIAPIKey    string  `yaml:"openai_api_key,omitempty"`    // OpenAI-compatible API key
+	OpenAIBaseURL   string  `yaml:"openai_base_url,omitempty"`   // OpenAI-compatible base URL
+	OnChain         bool    `yaml:"on_chain,omitempty"`          // mint ERC-721 on AgentRegistry (requires wallet)
+	AgentAPI        string  `yaml:"agent_api,omitempty"`         // URL to the agent's API (e.g. "http://localhost:10000/agents/gemini-2.5-flash")
+	AgentCardSource string  `yaml:"agent_card_source,omitempty"` // URL to the agent's card (e.g. "http://localhost:8424/coding-agent/.well-known/agent-card.json")
 }
 
 // AgentsConfig is the top-level structure for agents.yaml.

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -110,6 +111,15 @@ func (h *agentHandler) registerAgent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(registered)
 }
 
+/*
+ * Agent Execution Handler
+ * This handler serves POST /agents/{id}/execute requests to execute a task on a specified agent.
+ * This is the entrypoint for http requests that are made by external interfaces.
+ * It supports two modes of execution:
+ * 1. If the request body contains an "input" field, it treats it as a direct execution request and calls ExecuteTask with the input.
+ * 2. If the request body contains "params" with "message.parts", it treats it as a structured request (e.g. from an agent API) and calls ExecuteTask with the params.
+ * In both cases, it returns the output from the agent execution as JSON.
+ */
 func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 	if h.agentMgr == nil {
 		http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
@@ -119,20 +129,61 @@ func (h *agentHandler) executeAgent(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	agentID := vars["id"]
 
-	var req struct {
-		Input string `json:"input"`
+	var reqbody []byte
+	if r.Body != nil {
+		buf := new(bytes.Buffer)
+		if _, err := buf.ReadFrom(r.Body); err != nil {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
+		}
+		reqbody = buf.Bytes()
+	} else {
+		http.Error(w, "request body is required", http.StatusBadRequest)
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+
+	// Decode request body into AgentRequest struct
+	var req types.AgentRequest
+
+	if err := json.NewDecoder(bytes.NewBuffer(reqbody)).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, req.Input)
+	// If input is provided then we look for configured agents and execute
+	// Otherwise, we forward http request to configured agent API and return the response as is.
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if req.Input != "" {
+		output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, reqbody)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("execution failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"output": output})
+		return
+	}
+
+	if !(len(req.Params.Message.Parts) > 0) {
+		http.Error(w, "request body must contain 'parts' array when passing params in body.", http.StatusBadRequest)
+		return
+	}
+
+	output, err := h.agentMgr.ExecuteTask(r.Context(), agentID, reqbody)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("execution failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-
+	var jsonOutput *struct {
+		MessageType string          `json:"message_type"`
+		Message     json.RawMessage `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(output), &jsonOutput); err == nil {
+		// This is to match SendMessageSuccessResponse format in adk-client
+		json.NewEncoder(w).Encode(jsonOutput.Message)
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"output": output})
 }
 

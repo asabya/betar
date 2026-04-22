@@ -7,24 +7,50 @@ import (
 )
 
 // AgentListingToAgentCard converts a Betar AgentListing to an A2A AgentCard.
-func AgentListingToAgentCard(listing *types.AgentListing) *AgentCard {
+func AgentListingToAgentCard(listing *types.AgentListing, port int) *AgentCard {
 	url := listing.SellerID
 	if len(listing.Addrs) > 0 {
-		url = listing.Addrs[0]
+		// url = listing.Addrs[0]
+		// TODO: expected URL format should be - http://localhost:{port}/agents/{agent-id}/execute
+		url = fmt.Sprintf("http://localhost:%d/agents/%s/execute", port, listing.ID)
 	}
 
 	var skills []Skill
 	for i, proto := range listing.Protocols {
 		skills = append(skills, Skill{
-			ID:   fmt.Sprintf("protocol-%d", i),
-			Name: proto,
+			ID:          fmt.Sprintf("protocol-%d", i),
+			Name:        proto,
+			Description: fmt.Sprintf("Supports the %s protocol.", proto),
+			Examples: []string{
+				fmt.Sprintf("Can you perform a task using the %s protocol?", proto),
+				fmt.Sprintf("Demonstrate how to interact with the %s protocol.", proto),
+			},
+			Tags: []string{"coding", "generation", "x402"},
 		})
 	}
 
+	var capabilities = Capabilities{
+		Streaming: false, // Betar doesn't currently support streaming, but this could be enhanced in the future
+		Extensions: []Extension{
+			{
+				URI:         "https://github.com/google-a2a/a2a-x402/v0.1",
+				Description: "Supports payments using the x402 protocol.",
+				Required:    true,
+			},
+		},
+	}
+
 	return &AgentCard{
-		Name:   listing.Name,
-		URL:    url,
-		Skills: skills,
+		Name:               listing.Name,
+		Description:        "Fast code generation with Gemini 2.5 Flash Lite",
+		DefaultInputModes:  []string{"text", "text/plain"},
+		DefaultOutputModes: []string{"text", "text/plain"},
+		Version:            "0.0.1",
+		ProtocolVersion:    "0.3.0",
+		PreferredTransport: "JSONRPC",
+		URL:                url,
+		Skills:             skills,
+		Capabilities:       capabilities,
 	}
 }
 

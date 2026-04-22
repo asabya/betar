@@ -17,6 +17,7 @@ import (
 	go_openai "github.com/sashabaranov/go-openai"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/agent/remoteagent"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/adk/runner"
@@ -35,6 +36,7 @@ type ADKConfig struct {
 	Provider      string // "google", "openai", or "" for auto-detect
 	OpenAIAPIKey  string // OpenAI-compatible API key
 	OpenAIBaseURL string // OpenAI-compatible base URL (empty = api.openai.com)
+	AgentAPI      string // URL for custom agent hosting (must implement /execute endpoint)
 }
 
 // Runtime defines required agent runtime capabilities.
@@ -173,6 +175,58 @@ func (r *ADKRuntime) CreateAgent(ctx context.Context, spec AgentSpec) (string, e
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create adk llm agent: %w", err)
+	}
+
+	sessionSvc := session.InMemoryService()
+	agentID := r.generateAgentDID(name)
+	userID := "marketplace"
+	sessionID := "session-" + agentID
+
+	if _, err := sessionSvc.Create(ctx, &session.CreateRequest{
+		AppName:   r.appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	}); err != nil {
+		return "", fmt.Errorf("failed to create adk session: %w", err)
+	}
+
+	runnerInstance, err := runner.New(runner.Config{
+		AppName:        r.appName,
+		Agent:          a,
+		SessionService: sessionSvc,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create adk runner: %w", err)
+	}
+
+	r.mu.Lock()
+	r.agents[agentID] = &runtimeAgent{
+		agent:          a,
+		runner:         runnerInstance,
+		sessionService: sessionSvc,
+		sessionID:      sessionID,
+		userID:         userID,
+	}
+	r.mu.Unlock()
+
+	return agentID, nil
+}
+
+func (r *ADKRuntime) CreateHTTPAgent(ctx context.Context, spec AgentSpec) (string, error) {
+	if strings.TrimSpace(spec.AgentAPI) == "" {
+		return "", fmt.Errorf("Agent API URL is required")
+	}
+	name := strings.TrimSpace(spec.Name)
+	if name == "" {
+		return "", fmt.Errorf("agent name is required")
+	}
+
+	a, err := remoteagent.NewA2A(remoteagent.A2AConfig{
+		Name:            name,
+		AgentCardSource: spec.AgentCardSource,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create remote agent: %w", err)
 	}
 
 	sessionSvc := session.InMemoryService()

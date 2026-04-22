@@ -1058,17 +1058,19 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 
 	for _, profile := range agentsCfg.Agents {
 		registered, err := agentManager.RegisterAgent(ctx, agent.AgentSpec{
-			Name:          profile.Name,
-			Description:   profile.Description,
-			Price:         profile.Price,
-			Model:         profile.Model,
-			APIKey:        profile.APIKey,
-			X402Support:   true,
-			OnChain:       profile.OnChain,
-			Services:      []types.Service{{Name: profile.Name, Version: "1.0.0"}},
-			Provider:      profile.Provider,
-			OpenAIAPIKey:  profile.OpenAIAPIKey,
-			OpenAIBaseURL: profile.OpenAIBaseURL,
+			Name:            profile.Name,
+			Description:     profile.Description,
+			Price:           profile.Price,
+			Model:           profile.Model,
+			APIKey:          profile.APIKey,
+			X402Support:     true,
+			OnChain:         profile.OnChain,
+			Services:        []types.Service{{Name: profile.Name, Version: "1.0.0"}},
+			Provider:        profile.Provider,
+			OpenAIAPIKey:    profile.OpenAIAPIKey,
+			OpenAIBaseURL:   profile.OpenAIBaseURL,
+			AgentAPI:        profile.AgentAPI,
+			AgentCardSource: profile.AgentCardSource,
 		})
 		if err != nil {
 			fmt.Printf("warning: failed to register agent %q from config: %v\n", profile.Name, err)
@@ -1087,6 +1089,7 @@ func loadAndRegisterAgentsFromConfig(ctx context.Context, announceInterval time.
 				Protocols: []string{p2p.X402ProtocolID},
 				Timestamp: time.Now().Unix(),
 				TokenID:   tokenIDToString(registered.TokenID),
+				AgentAPI:  registered.AgentAPI,
 			}
 			listingService.UpsertLocalListing(msg)
 			if data, err := json.Marshal(msg); err == nil {
