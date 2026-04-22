@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/mark3labs/x402-go"
 	"google.golang.org/genai"
 )
 
@@ -126,14 +127,91 @@ func FromJSON(data []byte, v interface{}) error {
 	return json.Unmarshal(data, v)
 }
 
+type X402PaymentPayload struct {
+	x402.PaymentPayload
+	Payload struct {
+		UserOpHash string `json:"userOpHash"`
+	} `json:"payload"`
+	Accepted struct {
+		Scheme            string `json:"scheme"`
+		Network           string `json:"network"`
+		Asset             string `json:"asset"`
+		Amount            string `json:"amount"`
+		PayTo             string `json:"payTo"`
+		MaxTimeoutSeconds int    `json:"maxTimeoutSeconds"`
+		Extra             struct {
+			Model      string `json:"model"`
+			Capability string `json:"capability"`
+			Product    struct {
+				Name string `json:"name"`
+			} `json:"product"`
+		} `json:"extra"`
+	} `json:"accepted"`
+	Extensions any `json:"extensions"`
+}
+
 type Params struct {
 	Message struct {
-		Kind      string       `json:"kind"`
-		MessageID string       `json:"messageId"`
-		Parts     []genai.Part `json:"parts"`
-		Role      string       `json:"role"`
+		ContextID string `json:"contextId"`
+		Kind      string `json:"kind"`
+		MessageID string `json:"messageId"`
+		Metadata  struct {
+			X402PaymentPayload X402PaymentPayload `json:"x402.payment.payload"`
+		} `json:"metadata"`
+		Parts  []genai.Part `json:"parts"`
+		Role   string       `json:"role"`
+		TaskID string       `json:"taskId"`
 	} `json:"message"`
 }
+
+// Raw request body to agent
+//
+//	{
+//	  "id": "ac1dad7d-bf4c-43f0-8de6-6bc08824c859",
+//	  "jsonrpc": "2.0",
+//	  "method": "message/send",
+//	  "params": {
+//	    "message": {
+//	      "contextId": "5c218235-d137-4817-9766-ba8321b49fa5",
+//	      "kind": "message",
+//	      "messageId": "0fa01610-4a85-4e0d-a006-b4aa96069af1",
+//	      "metadata": {
+//	        "x402.payment.payload": {
+//	          "x402Version": 2,
+//	          "payload": {
+//	            "userOpHash": "0x111953B276CA476F5203CABED83DC4CF58055DEE4C10BEBF33748046B9AC9FF1"
+//	          },
+//	          "accepted": {
+//	            "scheme": "exact",
+//	            "network": "eip155:11155111",
+//	            "asset": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+//	            "amount": "500000",
+//	            "payTo": "0xb870F81337AFEC08308062FEC9667698f324eAf6",
+//	            "maxTimeoutSeconds": 600,
+//	            "extra": {
+//	              "model": "gemini-2.5-flash-lite",
+//	              "capability": "chat",
+//	              "product": {
+//	                "name": "gemini-2.5-flash-lite"
+//	              }
+//	            }
+//	          },
+//	          "resource": null,
+//	          "extensions": null
+//	        },
+//	        "x402.payment.status": "payment-submitted"
+//	      },
+//	      "parts": [
+//	        {
+//	          "kind": "text",
+//	          "text": "send_signed_payment_payload"
+//	        }
+//	      ],
+//	      "role": "user",
+//	      "taskId": "188ac63f-63ac-44e5-b6c2-8bfd0201154f"
+//	    }
+//	  }
+//	}
 type AgentRequest struct {
 	ID       string `json:"id,omitempty"`
 	Jsonrpc  string `json:"jsonrpc,omitempty"`

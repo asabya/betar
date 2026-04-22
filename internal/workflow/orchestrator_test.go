@@ -34,16 +34,16 @@ func (m *mockExecutor) on(agentID string, fn func(ctx context.Context, req types
 	m.handlers[agentID] = fn
 }
 
-func (m *mockExecutor) ExecuteTask(ctx context.Context, agentID string, req types.AgentRequest) (string, error) {
+func (m *mockExecutor) ExecuteTask(ctx context.Context, agentID string, input []byte) (string, error) {
 	m.mu.Lock()
-	m.calls = append(m.calls, executorCall{AgentID: agentID, Input: req.Input})
+	m.calls = append(m.calls, executorCall{AgentID: agentID, Input: string(input)})
 	fn, ok := m.handlers[agentID]
 	m.mu.Unlock()
 
 	if !ok {
 		return "", fmt.Errorf("no handler for agent %s", agentID)
 	}
-	return fn(ctx, req)
+	return fn(ctx, types.AgentRequest{Input: string(input)})
 }
 
 // ---------------------------------------------------------------------------

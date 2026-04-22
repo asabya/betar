@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
@@ -19,28 +21,27 @@ type ExecuteRequestResponse struct {
 	Message     any    `json:"message"`
 }
 
+// execError builds and marshals an error ExecuteRequestResponse, returning the bytes and a wrapped error.
+func execError(msgType, msg string, err error) ([]byte, error) {
+	resp := ExecuteRequestResponse{
+		MessageType: msgType,
+		Message:     msg,
+	}
+	respData, _ := json.Marshal(resp)
+	return respData, fmt.Errorf("%s: %w", msg, err)
+}
+
 // handleExecuteRequest
 func (m *Manager) handleExecuteRequest(ctx context.Context, from peer.ID, data []byte) ([]byte, error) {
+	fmt.Println("[handleExecuteRequest] >>><>")
 	var req marketplace.ExecuteRequest
 	if err := json.Unmarshal(data, &req); err != nil {
-		fmt.Println("Error:", err.Error())
-		resp := ExecuteRequestResponse{
-			MessageType: marketplace.MsgTypeExecError,
-			Message:     fmt.Sprintf("failed to unmarshal execute request: %v", err.Error()),
-		}
-		respData, _ := json.Marshal(resp)
-		return respData, fmt.Errorf("failed to unmarshal execute request: %v", err.Error())
+		return execError(marketplace.MsgTypeExecError, fmt.Sprintf("failed to unmarshal execute request: %v", err), err)
 	}
 	callerID := req.CallerDID
 	msgType, msgData, err := m.httpExecuteAndRespond(ctx, req.CorrelationID, req.Resource, req.Body, callerID)
 	if err != nil {
-		fmt.Println("Error in httpExecuteAndRespond:", err.Error())
-		resp := ExecuteRequestResponse{
-			MessageType: marketplace.MsgTypeExecError,
-			Message:     fmt.Sprintf("execution failed: %v", err.Error()),
-		}
-		respData, _ := json.Marshal(resp)
-		return respData, fmt.Errorf("execution failed: %v", err.Error())
+		return execError(marketplace.MsgTypeExecError, fmt.Sprintf("execution failed: %v", err), err)
 	}
 	resp := ExecuteRequestResponse{
 		MessageType: msgType,
@@ -183,7 +184,7 @@ func (m *Manager) handleX402PaidRequest(ctx context.Context, from peer.ID, _ str
 
 	fmt.Printf("[handleX402PaidRequest] payment settled txHash=%s\n", txHash)
 
-	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), resource, bodyPayload)
+	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), resource, data)
 	if err != nil {
 		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
 	}
@@ -249,7 +250,7 @@ func (m *Manager) handleX402WithPayment(ctx context.Context, from peer.ID, req *
 		_ = json.Unmarshal(req.Body, &bodyPayload)
 	}
 
-	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), req.Resource, bodyPayload)
+	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), req.Resource, req.Body)
 	if err != nil {
 		return sendX402Error(req.CorrelationID, marketplace.ErrExecutionFailed, err.Error())
 	}
@@ -317,22 +318,24 @@ func (m *Manager) httpExecuteAndRespond(ctx context.Context, correlationID, reso
 	}
 	defer resp.Body.Close()
 
+	// Print raw body for debugging
+	fmt.Println("Raw HTTP response body:")
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(bodyBytes))
+
+	// Reset the response body reader after reading for logging
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
 	var execResp types.AgentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&execResp); err != nil {
 		fmt.Println("Error decoding HTTP response:", err.Error())
 		return marketplace.MsgTypeExecError, nil, fmt.Errorf("error decoding HTTP response: %w", err)
 	}
+	output := bodyBytes
 	// Send HTTP response back to the peer through libp2p.
+	// check if the response has payment required fields
 	if hasX402PaymentRequired(execResp) {
-		output, err := json.Marshal(execResp)
-		if err != nil {
-			return marketplace.MsgTypeExecError, nil, fmt.Errorf("error marshaling payment required response: %w", err)
-		}
 		return marketplace.MsgTypeExecPaymentRequired, output, nil
-	}
-	output, err := json.Marshal(execResp)
-	if err != nil {
-		return marketplace.MsgTypeExecError, nil, fmt.Errorf("error marshaling execution response: %w", err)
 	}
 	return marketplace.MsgTypeExecResponse, output, nil
 }
@@ -344,7 +347,8 @@ func (m *Manager) executeAndRespond(ctx context.Context, correlationID, resource
 		_ = json.Unmarshal(rawBody, &bodyPayload)
 	}
 
-	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), resource, bodyPayload)
+	output, err := m.ExecuteTask(context.WithValue(ctx, ctxKeySkipSession, true), resource, rawBody)
+	// TODO: distinguish execution errors from other types and return appropriate x402 error codes
 	if err != nil {
 		return sendX402Error(correlationID, marketplace.ErrExecutionFailed, err.Error())
 	}

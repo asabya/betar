@@ -45,8 +45,8 @@ func executeTaskCmd(agentID, task string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		req := types.AgentRequest{Input: task}
-		output, err := mgr.ExecuteTask(ctx, agentID, req)
-		return executeResultMsg{agentID: agentID, output: output, err: err}
+		output, err := mgr.ExecuteTask(ctx, agentID, []byte(req.Input))
+		return executeResultMsg{agentID: agentID, output: string(output), err: err}
 	}
 }
 

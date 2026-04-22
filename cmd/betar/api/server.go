@@ -55,7 +55,7 @@ func NewServer(port int, agentMgr *agent.Manager, listingSvc *marketplace.AgentL
 
 	// A2A Agent Card discovery
 	if listingSvc != nil {
-		r.HandleFunc("/{agentName}/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
+		r.HandleFunc("/agents/{agentName}/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
 			listings := listingSvc.ListListings()
 			vars := mux.Vars(r)
 			agentName := vars["agentName"]

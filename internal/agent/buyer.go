@@ -111,28 +111,22 @@ func (m *Manager) connectToPeer(ctx context.Context, sellerID string, addrs []st
 	return peerID, nil
 }
 
-func (m *Manager) RemoteExecute(ctx context.Context, peerID peer.ID, agentID string, request types.AgentRequest) (string, error) {
+func (m *Manager) RemoteExecute(ctx context.Context, peerID peer.ID, agentID string, reqbody []byte) (string, error) {
+	request := types.AgentRequest{}
+	if err := json.Unmarshal(reqbody, &request); err != nil {
+		return "", fmt.Errorf("failed to unmarshal agent request body: %w", err)
+	}
+	// TODO: can we use raw request instead of constructing AgentRequest here? need to match the expected format on the seller side
 	if m.streamHandler == nil {
 		return "", fmt.Errorf("stream handler not configured")
 	}
 	correlationID := uuid.New().String()
-
-	bodyPayload := types.AgentRequest{
-		Resource: agentID,
-		Input:    request.Input,
-		Params:   request.Params,
-		Jsonrpc:  request.Jsonrpc,
-		Method:   request.Method,
-		ID:       request.ID,
-	}
-	// bodyPayload := map[string]string{"resource": agentID, "input": request.Input}
-	bodyBytes, _ := json.Marshal(bodyPayload)
 	req := marketplace.ExecuteRequest{
 		Version:       marketplace.ExecLibP2PVersion,
 		CorrelationID: correlationID,
 		Resource:      agentID,
 		Method:        "execute",
-		Body:          bodyBytes,
+		Body:          reqbody,
 		CallerDID:     m.nodeDID,
 	}
 	reqData, err := json.Marshal(req)

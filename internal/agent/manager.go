@@ -45,7 +45,7 @@ type Manager struct {
 
 	mu            sync.RWMutex
 	localAgents   map[string]*LocalAgent
-	customHandler func(ctx context.Context, agentID, input string) (string, error)
+	customHandler func(ctx context.Context, agentID string, input []byte) (output []byte, err error)
 }
 
 // LocalAgent represents a local agent managed by this node
@@ -117,7 +117,7 @@ func (m *Manager) RegisterStreamHandlers(sh *p2p.StreamHandler) {
 
 // SetCustomHandler registers a custom task handler that is used instead of the
 // ADK runtime for agents registered with CustomHandler: true.
-func (m *Manager) SetCustomHandler(h func(ctx context.Context, agentID, input string) (string, error)) {
+func (m *Manager) SetCustomHandler(h func(ctx context.Context, agentID string, input []byte) (output []byte, err error)) {
 	m.mu.Lock()
 	m.customHandler = h
 	m.mu.Unlock()
@@ -267,7 +267,11 @@ func (m *Manager) RegisterAgent(ctx context.Context, spec AgentSpec) (*LocalAgen
 }
 
 // ExecuteTask executes a task on a local agent or a remote agent from CRDT
-func (m *Manager) ExecuteTask(ctx context.Context, agentID string, request types.AgentRequest) (string, error) {
+func (m *Manager) ExecuteTask(ctx context.Context, agentID string, reqbody []byte) (string, error) {
+	var request types.AgentRequest
+	if err := json.Unmarshal(reqbody, &request); err != nil {
+		return "", fmt.Errorf("failed to unmarshal request body: %w", err)
+	}
 	fmt.Printf("[ExecuteTask] Starting task execution for agentID: %s\n", agentID)
 
 	// Find local agent first
@@ -286,11 +290,11 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID string, request types
 		// If no runtime, try the custom handler (for CustomHandler agents).
 		if !rtok && handler != nil {
 			fmt.Printf("[ExecuteTask] No runtime, using custom handler for agent: %s\n", agent.AgentID)
-			output, err := handler(ctx, agent.AgentID, request.Input)
+			output, err := handler(ctx, agent.AgentID, []byte(request.Input))
 			if err != nil {
 				return "", fmt.Errorf("custom handler failed: %w", err)
 			}
-			return output, nil
+			return string(output), nil
 		}
 		if !rtok {
 			return "", fmt.Errorf("runtime not found for agent: %s", agent.AgentID)
@@ -348,7 +352,7 @@ func (m *Manager) ExecuteTask(ctx context.Context, agentID string, request types
 			// Request PaymentRequired
 			// return m.RemoteExecuteX402(ctx, peerID, runtimeAgentID, input)
 			// TODO: m.RemoteExecute
-			return m.RemoteExecute(ctx, peerID, runtimeAgentID, request)
+			return m.RemoteExecute(ctx, peerID, runtimeAgentID, reqbody)
 		}
 		fmt.Printf("[ExecuteTask] Agent not found in CRDT listings\n")
 	} else {

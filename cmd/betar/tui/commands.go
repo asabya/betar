@@ -175,11 +175,11 @@ func executeAgent(args string) []string {
 	defer cancel()
 
 	req := types.AgentRequest{Input: parts[1]}
-	output, err := mgr.ExecuteTask(ctx, parts[0], req)
+	output, err := mgr.ExecuteTask(ctx, parts[0], []byte(req.Input))
 	if err != nil {
 		return []string{fmt.Sprintf("Execution failed: %v", err)}
 	}
-	return []string{fmt.Sprintf("Agent %s result:", parts[0]), output}
+	return []string{fmt.Sprintf("Agent %s result:", parts[0]), string(output)}
 }
 
 func createOrder(args string) []string {
